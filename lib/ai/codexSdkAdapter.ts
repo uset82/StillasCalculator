@@ -366,7 +366,7 @@ export async function startCodexChatGptSignIn(): Promise<CodexSignInResult> {
 
   const candidate = await findUsableCodexCommand();
   if (!candidate) {
-    if (process.env.NETLIFY) {
+    if (process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME) {
       return {
         ok: false,
         error:
