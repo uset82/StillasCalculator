@@ -26,6 +26,7 @@ yarn-error.log*
 
 # local smoke artifacts
 .codex-app-smoke-result.png
+.stillas-codex-backend/
 
 # env files
 .env

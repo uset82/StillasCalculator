@@ -6,6 +6,8 @@ export const AI_OPENAI_ACCOUNT_PENDING_COOKIE = 'stillas_ai_openai_pending';
 export const AI_OPENAI_ACCOUNT_DEVICE_COOKIE = 'stillas_ai_openai_device';
 export const AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE =
   'stillas_ai_openai_token_session';
+export const AI_CODEX_BACKEND_SESSION_COOKIE =
+  'stillas_ai_codex_backend_session';
 
 export const OPENAI_ACCOUNT_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60;
 export const OPENAI_ACCOUNT_PENDING_MAX_AGE_SECONDS = 15 * 60;
@@ -14,6 +16,7 @@ const SESSION_PURPOSE = 'codex-chatgpt-session';
 const PENDING_PURPOSE = 'codex-chatgpt-pending';
 const DEVICE_PURPOSE = 'codex-chatgpt-device';
 const TOKEN_SESSION_PURPOSE = 'codex-chatgpt-token-session';
+const BACKEND_SESSION_PURPOSE = 'codex-chatgpt-backend-session';
 const PRODUCTION_FALLBACK_COOKIE_SECRET =
   'stillascalculator-openai-account-auth-v1';
 
@@ -49,6 +52,10 @@ export interface OpenAiAccountTokenSessionCookieData {
   sessionId: string;
 }
 
+export interface CodexBackendSessionCookieData {
+  sessionId: string;
+}
+
 export interface VerifiedOpenAiAccountDeviceCookie {
   data: (OpenAiAccountDeviceCookieData & { expiresAt: number }) | null;
   clearCookie: boolean;
@@ -56,6 +63,11 @@ export interface VerifiedOpenAiAccountDeviceCookie {
 
 export interface VerifiedOpenAiAccountTokenSessionCookie {
   data: (OpenAiAccountTokenSessionCookieData & { expiresAt: number }) | null;
+  clearCookie: boolean;
+}
+
+export interface VerifiedCodexBackendSessionCookie {
+  data: (CodexBackendSessionCookieData & { expiresAt: number }) | null;
   clearCookie: boolean;
 }
 
@@ -348,6 +360,53 @@ export function getOpenAiAccountTokenSessionCookie(
   };
 }
 
+export function newCodexBackendSessionId(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+export function getCodexBackendSessionCookie(
+  request?: Request,
+  now = Date.now(),
+): VerifiedCodexBackendSessionCookie {
+  const rawBackendSession = readCookie(request, AI_CODEX_BACKEND_SESSION_COOKIE);
+  const verified = verifySignedDataCookie<CodexBackendSessionCookieData>(
+    rawBackendSession,
+    BACKEND_SESSION_PURPOSE,
+    now,
+  );
+  return {
+    data:
+      verified.valid && verified.data && verified.expiresAt !== null
+        ? { ...verified.data, expiresAt: verified.expiresAt }
+        : null,
+    clearCookie: rawBackendSession !== null && !verified.valid,
+  };
+}
+
+export function setCodexBackendSessionCookie(
+  response: NextResponse<unknown>,
+  sessionId: string,
+  expiresAt: number,
+  now = Date.now(),
+): number {
+  const cookie = createSignedDataCookie(
+    BACKEND_SESSION_PURPOSE,
+    { sessionId },
+    expiresAt,
+    now,
+  );
+  response.cookies.set({
+    name: AI_CODEX_BACKEND_SESSION_COOKIE,
+    value: cookie.value,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: cookie.maxAge,
+  });
+  return cookie.expiresAt;
+}
+
 export function setOpenAiAccountTokenSessionCookie(
   response: NextResponse<unknown>,
   sessionId: string,
@@ -410,6 +469,17 @@ export function clearOpenAiAccountTokenSessionCookie(
 ): void {
   response.cookies.set({
     name: AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE,
+    value: '',
+    path: '/',
+    maxAge: 0,
+  });
+}
+
+export function clearCodexBackendSessionCookie(
+  response: NextResponse<unknown>,
+): void {
+  response.cookies.set({
+    name: AI_CODEX_BACKEND_SESSION_COOKIE,
     value: '',
     path: '/',
     maxAge: 0,

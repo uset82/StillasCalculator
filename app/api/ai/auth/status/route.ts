@@ -1,35 +1,44 @@
 import { NextResponse } from 'next/server';
 
 import type { AiAuthStatusResponse } from '@/lib/ai/authStatus';
+import {
+  CODEX_DEVICE_CODE_SETTINGS_URL,
+  getCodexBackendAuthStatus,
+  type CodexBackendMcpStatus,
+} from '@/lib/ai/codexBackendClient';
 import { getCodexCliAuthStatus } from '@/lib/ai/codexSdkAdapter';
 import { ensurePersistentMcpToolBridge } from '@/lib/ai/mcpBridge';
-import { pollOpenAiAccountDeviceAuth } from '@/lib/ai/openAiDeviceAuth';
 import {
   getAiProviderPreference,
   getOpenAiApiKey,
   resolveActiveAiProvider,
 } from '@/lib/server/aiAuth';
 import {
-  loadOpenAiAccountTokens,
-  newOpenAiAccountTokenSessionId,
-  openAiAccountTokenSessionExpiresAt,
-  saveOpenAiAccountTokens,
-} from '@/lib/server/openAiAccountTokenStore';
-import {
+  clearCodexBackendSessionCookie,
   clearOpenAiAccountDeviceCookie,
   clearOpenAiAccountSessionCookie,
   clearOpenAiAccountTokenSessionCookie,
   clearPendingOpenAiAccountSessionCookie,
-  getOpenAiAccountDeviceCookie,
+  getCodexBackendSessionCookie,
   getOpenAiAccountSessionState,
-  getOpenAiAccountTokenSessionCookie,
-  OPENAI_ACCOUNT_SESSION_MAX_AGE_SECONDS,
-  setOpenAiAccountTokenSessionCookie,
+  OPENAI_ACCOUNT_PENDING_MAX_AGE_SECONDS,
   setOpenAiAccountSessionCookie,
+  setPendingOpenAiAccountSessionCookie,
 } from '@/lib/server/aiUserSession';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+function disconnectedMcp(error?: string): CodexBackendMcpStatus {
+  return {
+    connected: false,
+    persistent: false,
+    toolCount: 0,
+    missingTools: [],
+    checkedAt: null,
+    ...(error ? { error } : {}),
+  };
+}
 
 export async function GET(
   request: Request,
@@ -37,85 +46,99 @@ export async function GET(
   const now = Date.now();
   const providerPreference = getAiProviderPreference();
   const openAiApiKeyConfigured = Boolean(getOpenAiApiKey());
+  const session = getOpenAiAccountSessionState(request, now);
+  const backendSession = getCodexBackendSessionCookie(request, now);
+
+  if (providerPreference === 'openai-account') {
+    let authenticated = false;
+    let pending = false;
+    let expiresAt: number | null = null;
+    let error: string | undefined;
+    let deviceCodeRequired: boolean | undefined;
+    let mcp = disconnectedMcp();
+    let pendingExpiresAt: number | null = null;
+
+    if (backendSession.data) {
+      const backendStatus = await getCodexBackendAuthStatus(
+        backendSession.data.sessionId,
+      );
+      authenticated = backendStatus.authenticated;
+      pending = backendStatus.pending;
+      expiresAt = backendStatus.expiresAt;
+      error = backendStatus.error;
+      deviceCodeRequired = backendStatus.deviceCodeRequired;
+      mcp = backendStatus.mcp ?? disconnectedMcp(error);
+      pendingExpiresAt =
+        backendStatus.ok && backendStatus.deviceAuth
+          ? backendStatus.deviceAuth.expiresAt
+          : pending
+            ? Math.min(
+                backendSession.data.expiresAt,
+                now + OPENAI_ACCOUNT_PENDING_MAX_AGE_SECONDS * 1000,
+              )
+            : null;
+    } else if (backendSession.clearCookie) {
+      error = 'The ChatGPT sign-in session expired. Sign in again.';
+    }
+
+    const body: AiAuthStatusResponse = {
+      providerPreference,
+      activeProvider: authenticated ? 'openai-account' : 'none',
+      canUseAssistant: authenticated,
+      openAiApiKeyConfigured: false,
+      codexCli: { loggedIn: false, method: null },
+      openAiAccountSession: {
+        authenticated,
+        pending: !authenticated && pending,
+        expiresAt,
+        ...(error ? { error } : {}),
+        ...(deviceCodeRequired ? { deviceCodeRequired } : {}),
+      },
+      mcp,
+      setup: {
+        chatGptSignInCommand: 'codex login',
+        providerEnvValue: 'openai-codex',
+        deviceCodeSettingsUrl: CODEX_DEVICE_CODE_SETTINGS_URL,
+      },
+    };
+
+    const response = NextResponse.json(body);
+    if (backendSession.clearCookie) {
+      clearCodexBackendSessionCookie(response);
+    }
+    clearOpenAiAccountTokenSessionCookie(response);
+    clearOpenAiAccountDeviceCookie(response);
+    if (authenticated) {
+      setOpenAiAccountSessionCookie(response, now);
+      clearPendingOpenAiAccountSessionCookie(response);
+    } else {
+      clearOpenAiAccountSessionCookie(response);
+      if (pendingExpiresAt) {
+        setPendingOpenAiAccountSessionCookie(response, pendingExpiresAt, now);
+      } else {
+        clearPendingOpenAiAccountSessionCookie(response);
+      }
+    }
+    return response;
+  }
+
   const codexCli = await getCodexCliAuthStatus();
   const hasCodexChatGptAuth =
     codexCli.loggedIn && codexCli.method === 'chatgpt';
-  const session = getOpenAiAccountSessionState(request, now);
-  const deviceCookie = getOpenAiAccountDeviceCookie(request, now);
-  const tokenSessionCookie = getOpenAiAccountTokenSessionCookie(request, now);
-  const storedTokenSession = await loadOpenAiAccountTokens(
-    tokenSessionCookie.data?.sessionId,
-    now,
-  );
-  let hostedOpenAiAccountAuth = Boolean(storedTokenSession);
-  let hostedOpenAiAccountExpiresAt = storedTokenSession?.expiresAt ?? null;
-  let completedHostedTokenSession:
-    | { sessionId: string; expiresAt: number }
-    | null = null;
-  let clearDeviceCookie = deviceCookie.clearCookie;
-  let clearTokenSessionCookie =
-    tokenSessionCookie.clearCookie ||
-    (tokenSessionCookie.data !== null && storedTokenSession === null);
-  let clearPendingCookie = session.clearPendingCookie;
-  const shouldPromotePendingSession = session.pending && hasCodexChatGptAuth;
-  let pendingHostedAccountSignIn = false;
-
-  if (session.pending && deviceCookie.data && !shouldPromotePendingSession) {
-    const pollResult = await pollOpenAiAccountDeviceAuth(deviceCookie.data, now);
-
-    if (pollResult.status === 'pending') {
-      pendingHostedAccountSignIn = true;
-    } else if (pollResult.status === 'completed') {
-      const tokenSessionId = newOpenAiAccountTokenSessionId();
-      const tokenSessionExpiresAt = openAiAccountTokenSessionExpiresAt(now);
-      await saveOpenAiAccountTokens(
-        tokenSessionId,
-        pollResult.tokens,
-        tokenSessionExpiresAt,
-      );
-      hostedOpenAiAccountAuth = true;
-      hostedOpenAiAccountExpiresAt = tokenSessionExpiresAt;
-      completedHostedTokenSession = {
-        sessionId: tokenSessionId,
-        expiresAt: tokenSessionExpiresAt,
-      };
-      pendingHostedAccountSignIn = false;
-      clearPendingCookie = true;
-      clearDeviceCookie = true;
-      clearTokenSessionCookie = false;
-    } else {
-      pendingHostedAccountSignIn = false;
-      clearPendingCookie = true;
-      clearDeviceCookie = true;
-    }
-  }
-
+  const shouldPromotePendingSession =
+    providerPreference === 'codex-cli' && session.pending && hasCodexChatGptAuth;
   const localCodexSessionAuthenticated =
-    hasCodexChatGptAuth && (session.authenticated || shouldPromotePendingSession);
-  const openAiAccountSessionAuthenticated =
-    hostedOpenAiAccountAuth || localCodexSessionAuthenticated;
-  const openAiAccountSessionExpiresAt = hostedOpenAiAccountAuth
-    ? hostedOpenAiAccountExpiresAt
-    : localCodexSessionAuthenticated
-      ? session.sessionExpiresAt ??
-        now + OPENAI_ACCOUNT_SESSION_MAX_AGE_SECONDS * 1000
-      : null;
-  const hasUserCodexChatGptAuth = localCodexSessionAuthenticated;
+    hasCodexChatGptAuth &&
+    (session.authenticated || shouldPromotePendingSession);
   const resolvedProvider = resolveActiveAiProvider(providerPreference, {
     hasOpenAiApiKey: openAiApiKeyConfigured,
-    hasCodexChatGptAuth: hasUserCodexChatGptAuth,
-    hasOpenAiAccountAuth: hostedOpenAiAccountAuth,
+    hasCodexChatGptAuth: localCodexSessionAuthenticated,
+    hasOpenAiAccountAuth: false,
   });
   const mcp =
     resolvedProvider === 'codex-cli'
       ? await ensurePersistentMcpToolBridge()
-      : {
-          connected: false,
-          persistent: false,
-          toolCount: 0,
-          missingTools: [],
-          checkedAt: null,
-        };
+      : disconnectedMcp();
   const activeProvider =
     resolvedProvider === 'codex-cli' && !mcp.connected ? 'none' : resolvedProvider;
 
@@ -123,38 +146,30 @@ export async function GET(
     providerPreference,
     activeProvider,
     canUseAssistant:
-      activeProvider === 'openai-account' ||
-      activeProvider === 'openai-api' ||
-      activeProvider === 'codex-cli',
+      activeProvider === 'openai-api' || activeProvider === 'codex-cli',
     openAiApiKeyConfigured,
     codexCli,
     openAiAccountSession: {
-      authenticated: openAiAccountSessionAuthenticated,
+      authenticated: localCodexSessionAuthenticated,
       pending:
-        !openAiAccountSessionAuthenticated &&
-        (pendingHostedAccountSignIn || (session.pending && !clearPendingCookie)),
-      expiresAt: openAiAccountSessionExpiresAt,
+        !localCodexSessionAuthenticated &&
+        providerPreference === 'codex-cli' &&
+        session.pending,
+      expiresAt: localCodexSessionAuthenticated
+        ? session.sessionExpiresAt ?? null
+        : null,
     },
     mcp,
     setup: {
       chatGptSignInCommand: 'codex login',
       providerEnvValue: 'openai-codex',
+      deviceCodeSettingsUrl: CODEX_DEVICE_CODE_SETTINGS_URL,
     },
   };
 
   const response = NextResponse.json(body);
 
-  if (completedHostedTokenSession) {
-    setOpenAiAccountSessionCookie(response, now);
-    setOpenAiAccountTokenSessionCookie(
-      response,
-      completedHostedTokenSession.sessionId,
-      completedHostedTokenSession.expiresAt,
-      now,
-    );
-    clearPendingOpenAiAccountSessionCookie(response);
-    clearOpenAiAccountDeviceCookie(response);
-  } else if (shouldPromotePendingSession) {
+  if (shouldPromotePendingSession) {
     setOpenAiAccountSessionCookie(response, now);
     clearPendingOpenAiAccountSessionCookie(response);
     clearOpenAiAccountDeviceCookie(response);
@@ -162,16 +177,18 @@ export async function GET(
     if (session.clearSessionCookie) {
       clearOpenAiAccountSessionCookie(response);
     }
-    if (clearPendingCookie) {
+    if (
+      session.clearPendingCookie ||
+      providerPreference === 'openai-api' ||
+      providerPreference === 'off'
+    ) {
       clearPendingOpenAiAccountSessionCookie(response);
     }
   }
-  if (clearDeviceCookie) {
-    clearOpenAiAccountDeviceCookie(response);
+  if (backendSession.data || backendSession.clearCookie) {
+    clearCodexBackendSessionCookie(response);
   }
-  if (clearTokenSessionCookie) {
-    clearOpenAiAccountTokenSessionCookie(response);
-  }
+  clearOpenAiAccountTokenSessionCookie(response);
 
   return response;
 }

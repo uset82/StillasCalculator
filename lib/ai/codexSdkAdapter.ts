@@ -30,6 +30,7 @@ export type CodexSignInResult =
 
 interface RunProcessOptions {
   timeoutMs: number;
+  codexHome?: string;
 }
 
 interface ProcessResult {
@@ -152,8 +153,19 @@ function prependPathDirs(env: NodeJS.ProcessEnv, pathDirs: string[]): void {
   env[pathKey] = [...pathDirs, ...existingEntries].join(delimiter);
 }
 
-function getCodexProcessEnv(candidate?: CodexCommandCandidate): NodeJS.ProcessEnv {
+export interface CodexCliEnvironmentOptions {
+  codexHome?: string;
+}
+
+function getCodexProcessEnv(
+  candidate?: CodexCommandCandidate,
+  options: CodexCliEnvironmentOptions = {},
+): NodeJS.ProcessEnv {
   const env = { ...process.env };
+
+  if (options.codexHome) {
+    env.CODEX_HOME = options.codexHome;
+  }
 
   if (!env.CODEX_HOME && (env.NETLIFY || env.AWS_LAMBDA_FUNCTION_NAME)) {
     const codexHome = join(tmpdir(), 'stillas-codex-home');
@@ -229,12 +241,12 @@ function shouldUseShell(command: string): boolean {
 function runProcess(
   candidate: CodexCommandCandidate,
   args: string[],
-  { timeoutMs }: RunProcessOptions,
+  options: RunProcessOptions,
 ): Promise<ProcessResult> {
   return new Promise((resolve) => {
     const child = spawn(candidate.command, [...candidate.baseArgs, ...args], {
       cwd: process.cwd(),
-      env: getCodexProcessEnv(candidate),
+      env: getCodexProcessEnv(candidate, { codexHome: options.codexHome }),
       shell: shouldUseShell(candidate.command),
       windowsHide: true,
     });
@@ -244,7 +256,7 @@ function runProcess(
 
     const timer = setTimeout(() => {
       child.kill();
-    }, timeoutMs);
+    }, options.timeoutMs);
 
     child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
@@ -302,9 +314,11 @@ function parseDeviceAuth(output: string):
 
 async function getCodexLoginStatus(
   candidate: CodexCommandCandidate,
+  options: CodexCliEnvironmentOptions = {},
 ): Promise<CodexCliAuthStatus> {
   const result = await runProcess(candidate, ['login', 'status'], {
     timeoutMs: LOGIN_STATUS_TIMEOUT_MS,
+    codexHome: options.codexHome,
   });
   const output = `${result.stdout}\n${result.stderr}`;
   const loggedIn = result.exitCode === 0 && /Logged in/i.test(output);
@@ -314,9 +328,11 @@ async function getCodexLoginStatus(
   };
 }
 
-async function findLoggedInCodex(): Promise<CodexCliAuthStatus> {
+async function findLoggedInCodex(
+  options: CodexCliEnvironmentOptions = {},
+): Promise<CodexCliAuthStatus> {
   for (const command of getCodexCommandCandidates()) {
-    const status = await getCodexLoginStatus(command);
+    const status = await getCodexLoginStatus(command, options);
     if (status.loggedIn) {
       return status;
     }
@@ -324,8 +340,10 @@ async function findLoggedInCodex(): Promise<CodexCliAuthStatus> {
   return { loggedIn: false, method: null };
 }
 
-export async function getCodexCliAuthStatus(): Promise<CodexCliAuthStatus> {
-  return findLoggedInCodex();
+export async function getCodexCliAuthStatus(
+  options: CodexCliEnvironmentOptions = {},
+): Promise<CodexCliAuthStatus> {
+  return findLoggedInCodex(options);
 }
 
 async function isUsableCodexCommand(
@@ -409,7 +427,7 @@ export async function startCodexChatGptSignIn(): Promise<CodexSignInResult> {
         ok: true,
         alreadyConnected: false,
         message:
-          'Open the OpenAI sign-in link and enter the one-time code shown in the app.',
+          'Open the OpenAI sign-in link and enter the one-time code shown in the app. Use the same sign-in method you used when you registered your OpenAI account.',
         deviceAuth,
       };
       activeDeviceSignIn = {

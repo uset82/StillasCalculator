@@ -1,4 +1,9 @@
-export type AiProviderPreference = 'auto' | 'openai-api' | 'codex-cli' | 'off';
+export type AiProviderPreference =
+  | 'auto'
+  | 'openai-account'
+  | 'openai-api'
+  | 'codex-cli'
+  | 'off';
 
 export type AiActiveProvider =
   | 'openai-account'
@@ -16,6 +21,14 @@ export function getAiProviderPreference(
     .trim()
     .toLowerCase();
 
+  if (
+    raw === 'openai-account' ||
+    raw === 'chatgpt-account' ||
+    raw === 'chatgpt' ||
+    raw === 'account'
+  ) {
+    return 'openai-account';
+  }
   if (raw === 'openai-api' || raw === 'api' || raw === 'openai') {
     return 'openai-api';
   }
@@ -43,6 +56,9 @@ export function resolveActiveAiProvider(
   },
 ): AiActiveProvider {
   if (preference === 'off') return 'off';
+  if (preference === 'openai-account') {
+    return options.hasOpenAiAccountAuth ? 'openai-account' : 'none';
+  }
   if (preference === 'openai-api') {
     return options.hasOpenAiApiKey ? 'openai-api' : 'none';
   }

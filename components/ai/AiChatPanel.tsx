@@ -16,33 +16,31 @@ function cn(...classes: Array<string | false | null | undefined>): string {
 
 function getAuthStatusLabel(status: AiAuthStatusResponse | null | undefined): string {
   if (!status) return "Checking AI connection";
-  if (status.openAiAccountSession.pending) return "Waiting for OpenAI sign-in";
+  if (status.openAiAccountSession.error) return "Codex backend needs attention";
   if (status.activeProvider === "openai-account") {
-    return "OpenAI account + app tools connected";
-  }
-  if (
-    status.activeProvider === "openai-api" &&
-    status.openAiAccountSession.authenticated
-  ) {
-    return "OpenAI account + app tools connected";
+    return "ChatGPT account + app tools connected";
   }
   if (status.activeProvider === "openai-api") return "OpenAI API + app tools connected";
+  if (status.openAiAccountSession.pending) return "Waiting for OpenAI sign-in";
+  if (status.providerPreference === "openai-account") {
+    return "ChatGPT sign-in required";
+  }
   if (
     status.codexCli.loggedIn &&
     status.codexCli.method === "chatgpt" &&
     !status.openAiAccountSession.authenticated
   ) {
-    return "Sign in with OpenAI to use Codex";
+    return "Sign in with ChatGPT to use Codex";
   }
   if (status.codexCli.loggedIn && status.codexCli.method !== "chatgpt") {
-    return "OpenAI account sign-in required";
+    return "ChatGPT sign-in required";
   }
   if (status.codexCli.method === "chatgpt" && !status.mcp.connected) {
     return "MCP tools disconnected";
   }
   if (status.activeProvider === "codex-cli") {
     return status.codexCli.method === "chatgpt"
-      ? "OpenAI account + MCP tools connected"
+      ? "ChatGPT account + MCP tools connected"
       : "Codex CLI connected";
   }
   if (status.activeProvider === "off") return "AI disabled";
@@ -59,17 +57,21 @@ function getAuthDotClass(status: AiAuthStatusResponse | null | undefined): strin
 function canStartChatGptSignIn(
   status: AiAuthStatusResponse | null | undefined,
 ): boolean {
-  if (!status) return true;
+  if (!status) return false;
+  const supportsAccountSignIn =
+    status.providerPreference === "openai-account" ||
+    status.providerPreference === "codex-cli" ||
+    status.providerPreference === "auto";
   if (
-    status.providerPreference === "off" ||
+    !supportsAccountSignIn ||
     status.activeProvider === "off" ||
+    status.activeProvider === "openai-api" ||
     status.openAiAccountSession.authenticated ||
     status.openAiAccountSession.pending
   ) {
     return false;
   }
   if (
-    status.activeProvider === "openai-api" ||
     status.activeProvider === "none" ||
     !status.canUseAssistant
   ) {
@@ -224,7 +226,7 @@ export function AiChatPanel({
                 "disabled:cursor-not-allowed disabled:bg-gray-300",
               )}
             >
-              {authActionPending ? "Opening..." : "Sign in with OpenAI"}
+              {authActionPending ? "Opening..." : "Sign in with ChatGPT"}
             </button>
           ) : null}
           {/* In-flight progress indicator (Req 12.3). */}
@@ -252,16 +254,31 @@ export function AiChatPanel({
           data-testid="ai-unavailable-message"
           className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
         >
-          {authStatus?.openAiAccountSession.pending ? (
+          {authStatus?.openAiAccountSession.error ? (
             <>
-              Finish the OpenAI sign-in in your browser. After you enter the
-              one-time code, the assistant will use your OpenAI account and app
+              {authStatus.openAiAccountSession.error}{" "}
+              {authStatus.openAiAccountSession.deviceCodeRequired &&
+              authStatus.setup.deviceCodeSettingsUrl ? (
+                <a
+                  href={authStatus.setup.deviceCodeSettingsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium underline"
+                >
+                  Enable device code login in ChatGPT Security Settings.
+                </a>
+              ) : null}
+            </>
+          ) : authStatus?.openAiAccountSession.pending ? (
+            <>
+              Finish the ChatGPT sign-in in your browser. After you enter the
+              one-time code, the assistant will use your ChatGPT account and app
               tools automatically.
             </>
           ) : authStatus?.codexCli.method === "chatgpt" &&
             !authStatus.openAiAccountSession.authenticated ? (
             <>
-              Sign in with your OpenAI/ChatGPT account in this app before using
+              Sign in with your ChatGPT account in this app before using
               the assistant.
             </>
           ) : authStatus?.codexCli.method === "chatgpt" && !authStatus.mcp.connected ? (
@@ -269,10 +286,15 @@ export function AiChatPanel({
               Codex is signed in, but the Stillas MCP tool bridge is not connected.
               Check again to restart the bridge. All other features remain available.
             </>
+          ) : authStatus?.providerPreference !== "openai-api" ? (
+            <>
+              Sign in with your ChatGPT account in this app before using
+              the assistant.
+            </>
           ) : (
             <>
-              The AI assistant is not connected. Sign in with your OpenAI/ChatGPT
-              account, then check the connection again.
+              The AI assistant is not connected. The app owner needs to configure
+              server-side OpenAI API access.
             </>
           )}
         </p>
@@ -294,7 +316,7 @@ export function AiChatPanel({
           data-testid="ai-auth-device-code"
           className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950"
         >
-          <div className="font-medium">OpenAI account sign-in</div>
+          <div className="font-medium">ChatGPT account sign-in</div>
           <a
             href={authActionDeviceAuth.verificationUri}
             target="_blank"
@@ -309,6 +331,15 @@ export function AiChatPanel({
               {authActionDeviceAuth.userCode}
             </code>
           </div>
+          <p className="mt-2 text-xs text-blue-900">
+            Use the same sign-in method you used when you registered your
+            ChatGPT account. If Continue is disabled, enable device code login
+            in ChatGPT Security Settings, then start sign-in again.
+          </p>
+          <p className="mt-1 text-xs text-blue-800">
+            Code expires at{" "}
+            {new Date(authActionDeviceAuth.expiresAt).toLocaleTimeString()}.
+          </p>
         </div>
       ) : null}
 

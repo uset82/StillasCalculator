@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
 import type { ChatMessage, ScaffoldPlan } from '@/lib/types';
+import { sendCodexBackendChatRequest } from '@/lib/ai/codexBackendClient';
 import {
   messageRequiresTools,
   runCodexAgentWithTools,
@@ -13,18 +14,8 @@ import {
   getOpenAiApiKey,
 } from '@/lib/server/aiAuth';
 import {
-  refreshOpenAiAccountTokens,
-  shouldRefreshOpenAiAccountTokens,
-  type OpenAiAccountTokens,
-} from '@/lib/ai/openAiDeviceAuth';
-import {
-  deleteOpenAiAccountTokens,
-  loadOpenAiAccountTokens,
-  saveOpenAiAccountTokens,
-} from '@/lib/server/openAiAccountTokenStore';
-import {
+  getCodexBackendSessionCookie,
   getOpenAiAccountSessionState,
-  getOpenAiAccountTokenSessionCookie,
 } from '@/lib/server/aiUserSession';
 import { scaffoldPlanController } from '@/lib/state/projectStateController';
 
@@ -32,8 +23,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const REQUEST_TIMEOUT_MS = 45_000;
-const CHATGPT_CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex';
-const DEFAULT_CODEX_ACCOUNT_MODEL = 'gpt-5.3-codex';
 
 export interface AiChatRequest {
   messages: ChatMessage[];
@@ -56,66 +45,6 @@ export interface AiToolResult {
   ok: boolean;
   data?: unknown;
   error?: string;
-}
-
-type HostedOpenAiAccountAuth =
-  | { status: 'ready'; tokens: OpenAiAccountTokens }
-  | { status: 'missing' }
-  | { status: 'failed'; permanent: boolean; error: string };
-
-function getOpenAiAccountModel(): string {
-  return (
-    process.env.OPENAI_CODEX_MODEL?.trim() ||
-    process.env.STILLAS_CODEX_MODEL?.trim() ||
-    DEFAULT_CODEX_ACCOUNT_MODEL
-  );
-}
-
-function createOpenAiAccountClient(tokens: OpenAiAccountTokens): OpenAI {
-  const defaultHeaders: Record<string, string> = {
-    originator: process.env.OPENAI_CODEX_ORIGINATOR?.trim() || 'codex_cli_rs',
-    'User-Agent':
-      process.env.OPENAI_CODEX_USER_AGENT?.trim() || 'codex_cli_rs/0.0.1',
-  };
-  if (tokens.accountId) {
-    defaultHeaders['ChatGPT-Account-ID'] = tokens.accountId;
-  }
-
-  return new OpenAI({
-    apiKey: tokens.accessToken,
-    baseURL:
-      process.env.STILLAS_OPENAI_ACCOUNT_BASE_URL?.trim() ||
-      CHATGPT_CODEX_BASE_URL,
-    defaultHeaders,
-  });
-}
-
-async function getHostedOpenAiAccountAuth(
-  request: Request,
-  now = Date.now(),
-): Promise<HostedOpenAiAccountAuth> {
-  const cookie = getOpenAiAccountTokenSessionCookie(request, now);
-  const stored = await loadOpenAiAccountTokens(cookie.data?.sessionId, now);
-  if (!cookie.data || !stored) return { status: 'missing' };
-
-  let tokens = stored.tokens;
-  if (shouldRefreshOpenAiAccountTokens(tokens, now)) {
-    const refresh = await refreshOpenAiAccountTokens(tokens);
-    if (!refresh.ok) {
-      if (refresh.permanent) {
-        await deleteOpenAiAccountTokens(cookie.data.sessionId);
-      }
-      return {
-        status: 'failed',
-        permanent: refresh.permanent,
-        error: refresh.error,
-      };
-    }
-    tokens = refresh.tokens;
-    await saveOpenAiAccountTokens(cookie.data.sessionId, tokens, stored.expiresAt);
-  }
-
-  return { status: 'ready', tokens };
 }
 
 async function runOpenAiBackedAgent(
@@ -220,6 +149,7 @@ export async function POST(request: Request): Promise<NextResponse<AiChatRespons
   const providerPreference = getAiProviderPreference();
   const apiKey = getOpenAiApiKey();
   const openAiAccountSession = getOpenAiAccountSessionState(request);
+  const backendSession = getCodexBackendSessionCookie(request);
   const sessionId = body.sessionId ?? newAiSessionId();
 
   if (providerPreference === 'off') {
@@ -228,33 +158,39 @@ export async function POST(request: Request): Promise<NextResponse<AiChatRespons
 
   const latestUser = [...messages].reverse().find((m) => m.role === 'user');
   const requiresTools = latestUser ? messageRequiresTools(latestUser.content) : false;
-  const hostedOpenAiAccountAuth =
-    providerPreference === 'openai-api'
-      ? { status: 'missing' as const }
-      : await getHostedOpenAiAccountAuth(request);
 
-  if (hostedOpenAiAccountAuth.status === 'failed') {
-    if (hostedOpenAiAccountAuth.permanent) {
+  if (providerPreference === 'openai-account') {
+    if (!backendSession.data?.sessionId) {
       return NextResponse.json({ unavailable: true });
     }
-    return NextResponse.json(
-      { error: 'The OpenAI account session could not be refreshed.' },
-      { status: 502 },
+    const backendResult = await sendCodexBackendChatRequest(
+      backendSession.data.sessionId,
+      {
+        messages,
+        projectState: body.projectState,
+        sessionId,
+      },
     );
-  }
-
-  if (
-    hostedOpenAiAccountAuth.status === 'ready' &&
-    providerPreference !== 'openai-api'
-  ) {
-    return runOpenAiBackedAgent(
-      createOpenAiAccountClient(hostedOpenAiAccountAuth.tokens),
-      messages,
-      sessionId,
-      latestUser,
-      requiresTools,
-      getOpenAiAccountModel(),
-    );
+    if (!backendResult.ok) {
+      if (backendResult.unavailable) {
+        return NextResponse.json({ unavailable: true });
+      }
+      return NextResponse.json(
+        {
+          error: backendResult.error,
+          ...(backendResult.timedOut ? { timedOut: true } : {}),
+        },
+        { status: backendResult.timedOut ? 504 : 502 },
+      );
+    }
+    return NextResponse.json({
+      reply: backendResult.reply,
+      toolResults: backendResult.toolResults ?? [],
+      scaffoldPlan: backendResult.scaffoldPlan,
+      ...(backendResult.structuredOutput !== undefined
+        ? { structuredOutput: backendResult.structuredOutput }
+        : {}),
+    });
   }
 
   const useOpenAiSdk = providerPreference !== 'codex-cli' && Boolean(apiKey);

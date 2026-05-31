@@ -100,7 +100,7 @@ describe("AiChatPanel in-flight disabling (Req 12.3)", () => {
 });
 
 describe("AiChatPanel AI connection status", () => {
-  it("shows hosted OpenAI API tool access and still offers OpenAI account sign-in in auto mode", () => {
+  it("shows hosted OpenAI API tool access without offering user account sign-in", () => {
     render(
       <AiChatPanel
         messages={SAMPLE_MESSAGES}
@@ -135,9 +135,7 @@ describe("AiChatPanel AI connection status", () => {
     expect(screen.getByTestId("ai-auth-status")).toHaveTextContent(
       "OpenAI API + app tools connected",
     );
-    expect(screen.getByTestId("ai-auth-sign-in-button")).toHaveTextContent(
-      "Sign in with OpenAI",
-    );
+    expect(screen.queryByTestId("ai-auth-sign-in-button")).not.toBeInTheDocument();
     expect(screen.getByTestId("ai-input-textarea")).not.toBeDisabled();
   });
 
@@ -174,7 +172,7 @@ describe("AiChatPanel AI connection status", () => {
     );
 
     expect(screen.getByTestId("ai-auth-status")).toHaveTextContent(
-      "OpenAI account + app tools connected",
+      "ChatGPT account + app tools connected",
     );
     expect(screen.queryByTestId("ai-auth-sign-in-button")).not.toBeInTheDocument();
     expect(screen.getByTestId("ai-input-textarea")).not.toBeDisabled();
@@ -212,7 +210,7 @@ describe("AiChatPanel AI connection status", () => {
     );
 
     expect(screen.getByTestId("ai-auth-status")).toHaveTextContent(
-      "OpenAI account + MCP tools connected",
+      "ChatGPT account + MCP tools connected",
     );
     expect(screen.getByTestId("ai-input-textarea")).not.toBeDisabled();
   });
@@ -227,9 +225,50 @@ describe("AiChatPanel AI connection status", () => {
     );
 
     expect(screen.getByTestId("ai-unavailable-message")).toHaveTextContent(
-      "Sign in with your OpenAI/ChatGPT account",
+      "Sign in with your ChatGPT account",
     );
     expect(screen.getByTestId("ai-input-textarea")).toBeDisabled();
+  });
+
+  it("requires OpenAI account sign-in in account mode", () => {
+    render(
+      <AiChatPanel
+        messages={SAMPLE_MESSAGES}
+        onSendMessage={vi.fn()}
+        unavailable
+        authStatus={{
+          providerPreference: "openai-account",
+          activeProvider: "none",
+          canUseAssistant: false,
+          openAiApiKeyConfigured: false,
+          codexCli: { loggedIn: false, method: null },
+          openAiAccountSession: {
+            authenticated: false,
+            pending: false,
+            expiresAt: null,
+          },
+          mcp: {
+            connected: false,
+            persistent: false,
+            toolCount: 0,
+            missingTools: [],
+            checkedAt: null,
+          },
+          setup: {
+            chatGptSignInCommand: "codex login",
+            providerEnvValue: "openai-codex",
+          },
+        }}
+        onStartChatGptSignIn={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("ai-auth-status")).toHaveTextContent(
+      "ChatGPT sign-in required",
+    );
+    expect(screen.getByTestId("ai-auth-sign-in-button")).toHaveTextContent(
+      "Sign in with ChatGPT",
+    );
   });
 
   it("requires the app user to sign in even when the host Codex CLI is already logged in", () => {
@@ -266,10 +305,10 @@ describe("AiChatPanel AI connection status", () => {
     );
 
     expect(screen.getByTestId("ai-auth-status")).toHaveTextContent(
-      "Sign in with OpenAI to use Codex",
+      "Sign in with ChatGPT to use Codex",
     );
     expect(screen.getByTestId("ai-auth-sign-in-button")).toHaveTextContent(
-      "Sign in with OpenAI",
+      "Sign in with ChatGPT",
     );
     expect(screen.getByTestId("ai-input-textarea")).toBeDisabled();
   });
@@ -330,13 +369,60 @@ describe("AiChatPanel AI connection status", () => {
     );
 
     const deviceAuth = screen.getByTestId("ai-auth-device-code");
-    expect(deviceAuth).toHaveTextContent("OpenAI account sign-in");
+    expect(deviceAuth).toHaveTextContent("ChatGPT account sign-in");
     expect(deviceAuth).toHaveTextContent("ABCD-12345");
+    expect(deviceAuth).toHaveTextContent("same sign-in method");
+    expect(deviceAuth).toHaveTextContent("ChatGPT Security Settings");
+    expect(deviceAuth).toHaveTextContent("Code expires at");
     expect(
       within(deviceAuth).getByRole("link", {
         name: "https://auth.openai.com/codex/device",
       }),
     ).toHaveAttribute("href", "https://auth.openai.com/codex/device");
+  });
+
+  it("shows Codex backend and device-code settings errors distinctly", () => {
+    render(
+      <AiChatPanel
+        messages={SAMPLE_MESSAGES}
+        onSendMessage={vi.fn()}
+        unavailable
+        authStatus={{
+          providerPreference: "openai-account",
+          activeProvider: "none",
+          canUseAssistant: false,
+          openAiApiKeyConfigured: false,
+          codexCli: { loggedIn: false, method: null },
+          openAiAccountSession: {
+            authenticated: false,
+            pending: false,
+            expiresAt: null,
+            error: "Device code login is not enabled.",
+            deviceCodeRequired: true,
+          },
+          mcp: {
+            connected: false,
+            persistent: false,
+            toolCount: 0,
+            missingTools: [],
+            checkedAt: null,
+          },
+          setup: {
+            chatGptSignInCommand: "codex login",
+            providerEnvValue: "openai-codex",
+            deviceCodeSettingsUrl: "https://chatgpt.com/#settings/Security",
+          },
+        }}
+      />,
+    );
+
+    const unavailableMessage = screen.getByTestId("ai-unavailable-message");
+    expect(unavailableMessage).toHaveTextContent("Device code login is not enabled.");
+    expect(
+      within(unavailableMessage).getByRole("link", {
+        name: "Enable device code login in ChatGPT Security Settings.",
+      }),
+    ).toHaveAttribute("href", "https://chatgpt.com/#settings/Security");
   });
 
   it("requires OpenAI account auth when Codex is logged in with an API key", () => {
@@ -373,10 +459,10 @@ describe("AiChatPanel AI connection status", () => {
     );
 
     expect(screen.getByTestId("ai-auth-status")).toHaveTextContent(
-      "OpenAI account sign-in required",
+      "ChatGPT sign-in required",
     );
     expect(screen.getByTestId("ai-auth-sign-in-button")).toHaveTextContent(
-      "Sign in with OpenAI",
+      "Sign in with ChatGPT",
     );
   });
 
