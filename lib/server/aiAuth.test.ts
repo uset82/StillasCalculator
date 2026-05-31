@@ -13,7 +13,15 @@ describe('AI auth provider selection', () => {
     );
   });
 
-  it('prefers OpenAI account/Codex auth in auto mode and falls back to a Platform API key', () => {
+  it('prefers hosted OpenAI account auth in auto mode and falls back through Codex CLI to a Platform API key', () => {
+    expect(
+      resolveActiveAiProvider('auto', {
+        hasOpenAiApiKey: true,
+        hasCodexChatGptAuth: true,
+        hasOpenAiAccountAuth: true,
+      }),
+    ).toBe('openai-account');
+
     expect(
       resolveActiveAiProvider('auto', {
         hasOpenAiApiKey: true,

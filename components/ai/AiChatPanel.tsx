@@ -17,6 +17,15 @@ function cn(...classes: Array<string | false | null | undefined>): string {
 function getAuthStatusLabel(status: AiAuthStatusResponse | null | undefined): string {
   if (!status) return "Checking AI connection";
   if (status.openAiAccountSession.pending) return "Waiting for OpenAI sign-in";
+  if (status.activeProvider === "openai-account") {
+    return "OpenAI account + app tools connected";
+  }
+  if (
+    status.activeProvider === "openai-api" &&
+    status.openAiAccountSession.authenticated
+  ) {
+    return "OpenAI account + app tools connected";
+  }
   if (status.activeProvider === "openai-api") return "OpenAI API + app tools connected";
   if (
     status.codexCli.loggedIn &&
@@ -52,27 +61,21 @@ function canStartChatGptSignIn(
 ): boolean {
   if (!status) return true;
   if (
-    status.providerPreference === "auto" &&
-    status.activeProvider === "openai-api" &&
-    !status.openAiAccountSession.authenticated &&
-    !status.openAiAccountSession.pending
+    status.providerPreference === "off" ||
+    status.activeProvider === "off" ||
+    status.openAiAccountSession.authenticated ||
+    status.openAiAccountSession.pending
+  ) {
+    return false;
+  }
+  if (
+    status.activeProvider === "openai-api" ||
+    status.activeProvider === "none" ||
+    !status.canUseAssistant
   ) {
     return true;
   }
-
-  const needsCodexChatGptAuth =
-    !status.codexCli.loggedIn || status.codexCli.method !== "chatgpt";
-  const needsAppOpenAiSession =
-    status.codexCli.method === "chatgpt" &&
-    !status.openAiAccountSession.authenticated;
-  return (
-    (needsCodexChatGptAuth || needsAppOpenAiSession) &&
-    !status.canUseAssistant &&
-    status.providerPreference !== "off" &&
-    status.providerPreference !== "openai-api" &&
-    status.activeProvider !== "off" &&
-    status.activeProvider !== "openai-api"
-  );
+  return false;
 }
 
 export interface AiChatPanelProps {
@@ -252,14 +255,14 @@ export function AiChatPanel({
           {authStatus?.openAiAccountSession.pending ? (
             <>
               Finish the OpenAI sign-in in your browser. After you enter the
-              one-time code, the app will unlock the Codex SDK automatically.
-              All other features remain available.
+              one-time code, the assistant will use your OpenAI account and app
+              tools automatically.
             </>
           ) : authStatus?.codexCli.method === "chatgpt" &&
             !authStatus.openAiAccountSession.authenticated ? (
             <>
               Sign in with your OpenAI/ChatGPT account in this app before using
-              the Codex SDK. All other features remain available.
+              the assistant.
             </>
           ) : authStatus?.codexCli.method === "chatgpt" && !authStatus.mcp.connected ? (
             <>
@@ -269,10 +272,7 @@ export function AiChatPanel({
           ) : (
             <>
               The AI assistant is not connected. Sign in with your OpenAI/ChatGPT
-              account through Codex using{" "}
-              <code className="rounded bg-amber-100 px-1 font-mono">codex login</code>,
-              then check again. Hosted API use still needs a server Platform API
-              key. All other features remain available.
+              account, then check the connection again.
             </>
           )}
         </p>

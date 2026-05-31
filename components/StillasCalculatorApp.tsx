@@ -243,12 +243,16 @@ export function StillasCalculatorApp() {
   }, [refreshAiAuthStatus]);
 
   useEffect(() => {
-    if (!aiAuthDeviceAuth || aiAuthStatus?.canUseAssistant) return;
+    if (!aiAuthDeviceAuth || aiAuthStatus?.openAiAccountSession.authenticated) return;
     const intervalId = window.setInterval(() => {
       void refreshAiAuthStatus();
     }, 4_000);
     return () => window.clearInterval(intervalId);
-  }, [aiAuthDeviceAuth, aiAuthStatus?.canUseAssistant, refreshAiAuthStatus]);
+  }, [
+    aiAuthDeviceAuth,
+    aiAuthStatus?.openAiAccountSession.authenticated,
+    refreshAiAuthStatus,
+  ]);
 
   // ----- Address search → state + footprint lookup (Req 3.4, 3.5, 4.1) -----
   const fetchFootprints = useCallback(async (lat: number, lon: number) => {

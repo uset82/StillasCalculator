@@ -141,6 +141,45 @@ describe("AiChatPanel AI connection status", () => {
     expect(screen.getByTestId("ai-input-textarea")).not.toBeDisabled();
   });
 
+  it("shows hosted OpenAI account tool access after account sign-in", () => {
+    render(
+      <AiChatPanel
+        messages={SAMPLE_MESSAGES}
+        onSendMessage={vi.fn()}
+        authStatus={{
+          providerPreference: "auto",
+          activeProvider: "openai-account",
+          canUseAssistant: true,
+          openAiApiKeyConfigured: true,
+          codexCli: { loggedIn: false, method: null },
+          openAiAccountSession: {
+            authenticated: true,
+            pending: false,
+            expiresAt: 86_400_000,
+          },
+          mcp: {
+            connected: false,
+            persistent: false,
+            toolCount: 0,
+            missingTools: [],
+            checkedAt: null,
+          },
+          setup: {
+            chatGptSignInCommand: "codex login",
+            providerEnvValue: "openai-codex",
+          },
+        }}
+        onStartChatGptSignIn={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("ai-auth-status")).toHaveTextContent(
+      "OpenAI account + app tools connected",
+    );
+    expect(screen.queryByTestId("ai-auth-sign-in-button")).not.toBeInTheDocument();
+    expect(screen.getByTestId("ai-input-textarea")).not.toBeDisabled();
+  });
+
   it("shows ChatGPT/Codex account connection when the server reports Codex ChatGPT auth", () => {
     render(
       <AiChatPanel
@@ -178,7 +217,7 @@ describe("AiChatPanel AI connection status", () => {
     expect(screen.getByTestId("ai-input-textarea")).not.toBeDisabled();
   });
 
-  it("shows the Codex login command when the assistant is unavailable", () => {
+  it("asks the user to sign in when the assistant is unavailable", () => {
     render(
       <AiChatPanel
         messages={SAMPLE_MESSAGES}
@@ -188,7 +227,7 @@ describe("AiChatPanel AI connection status", () => {
     );
 
     expect(screen.getByTestId("ai-unavailable-message")).toHaveTextContent(
-      "codex login",
+      "Sign in with your OpenAI/ChatGPT account",
     );
     expect(screen.getByTestId("ai-input-textarea")).toBeDisabled();
   });

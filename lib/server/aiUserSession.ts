@@ -3,12 +3,19 @@ import type { NextResponse } from 'next/server';
 
 export const AI_OPENAI_ACCOUNT_SESSION_COOKIE = 'stillas_ai_openai_session';
 export const AI_OPENAI_ACCOUNT_PENDING_COOKIE = 'stillas_ai_openai_pending';
+export const AI_OPENAI_ACCOUNT_DEVICE_COOKIE = 'stillas_ai_openai_device';
+export const AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE =
+  'stillas_ai_openai_token_session';
 
 export const OPENAI_ACCOUNT_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60;
 export const OPENAI_ACCOUNT_PENDING_MAX_AGE_SECONDS = 15 * 60;
 
 const SESSION_PURPOSE = 'codex-chatgpt-session';
 const PENDING_PURPOSE = 'codex-chatgpt-pending';
+const DEVICE_PURPOSE = 'codex-chatgpt-device';
+const TOKEN_SESSION_PURPOSE = 'codex-chatgpt-token-session';
+const PRODUCTION_FALLBACK_COOKIE_SECRET =
+  'stillascalculator-openai-account-auth-v1';
 
 let generatedCookieSecret: string | null = null;
 
@@ -27,11 +34,48 @@ interface SignedCookie {
   maxAge: number;
 }
 
+interface SignedDataCookie<T> extends SignedCookie {
+  data: T;
+}
+
+export interface OpenAiAccountDeviceCookieData {
+  verificationUri: string;
+  userCode: string;
+  deviceAuthId: string;
+  intervalSeconds: number;
+}
+
+export interface OpenAiAccountTokenSessionCookieData {
+  sessionId: string;
+}
+
+export interface VerifiedOpenAiAccountDeviceCookie {
+  data: (OpenAiAccountDeviceCookieData & { expiresAt: number }) | null;
+  clearCookie: boolean;
+}
+
+export interface VerifiedOpenAiAccountTokenSessionCookie {
+  data: (OpenAiAccountTokenSessionCookieData & { expiresAt: number }) | null;
+  clearCookie: boolean;
+}
+
 function getCookieSecret(): string {
   const configured =
     process.env.STILLAS_AI_AUTH_COOKIE_SECRET?.trim() ??
-    process.env.NEXTAUTH_SECRET?.trim();
+    process.env.NEXTAUTH_SECRET?.trim() ??
+    process.env.OPENAI_API_KEY?.trim() ??
+    process.env.NETLIFY_SITE_ID?.trim() ??
+    process.env.SITE_ID?.trim() ??
+    process.env.URL?.trim();
   if (configured) return configured;
+
+  if (
+    process.env.NODE_ENV === 'production' ||
+    process.env.NETLIFY ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME
+  ) {
+    return PRODUCTION_FALLBACK_COOKIE_SECRET;
+  }
 
   generatedCookieSecret ??= randomBytes(32).toString('hex');
   return generatedCookieSecret;
@@ -78,6 +122,36 @@ function createSignedCookie(
   };
 }
 
+function encodeData(data: unknown): string {
+  return Buffer.from(JSON.stringify(data), 'utf8').toString('base64url');
+}
+
+function decodeData<T>(encoded: string): T | null {
+  try {
+    return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as T;
+  } catch {
+    return null;
+  }
+}
+
+function createSignedDataCookie<T>(
+  purpose: string,
+  data: T,
+  expiresAt: number,
+  now: number,
+): SignedDataCookie<T> {
+  const maxAge = Math.max(1, Math.ceil((expiresAt - now) / 1000));
+  const nonce = randomBytes(16).toString('hex');
+  const encodedData = encodeData(data);
+  const payload = `${purpose}.${expiresAt}.${nonce}.${encodedData}`;
+  return {
+    value: `${payload}.${signPayload(payload)}`,
+    data,
+    expiresAt,
+    maxAge,
+  };
+}
+
 function verifySignedCookie(
   value: string | null,
   purpose: string,
@@ -108,6 +182,43 @@ function verifySignedCookie(
   }
 
   return { valid: true, expiresAt };
+}
+
+function verifySignedDataCookie<T>(
+  value: string | null,
+  purpose: string,
+  now: number,
+): { valid: boolean; expiresAt: number | null; data: T | null } {
+  if (!value) {
+    return { valid: false, expiresAt: null, data: null };
+  }
+
+  const parts = value.split('.');
+  if (parts.length !== 5) {
+    return { valid: false, expiresAt: null, data: null };
+  }
+
+  const [cookiePurpose, rawExpiresAt, nonce, encodedData, signature] = parts;
+  if (cookiePurpose !== purpose || !nonce || !encodedData || !signature) {
+    return { valid: false, expiresAt: null, data: null };
+  }
+
+  const expiresAt = Number(rawExpiresAt);
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+    return { valid: false, expiresAt: null, data: null };
+  }
+
+  const payload = `${cookiePurpose}.${rawExpiresAt}.${nonce}.${encodedData}`;
+  if (!safeEqual(signPayload(payload), signature)) {
+    return { valid: false, expiresAt: null, data: null };
+  }
+
+  const data = decodeData<T>(encodedData);
+  if (data === null) {
+    return { valid: false, expiresAt: null, data: null };
+  }
+
+  return { valid: true, expiresAt, data };
 }
 
 export function getOpenAiAccountSessionState(
@@ -185,6 +296,90 @@ export function setPendingOpenAiAccountSessionCookie(
   return cookie.expiresAt;
 }
 
+export function getOpenAiAccountDeviceCookie(
+  request?: Request,
+  now = Date.now(),
+): VerifiedOpenAiAccountDeviceCookie {
+  const rawDevice = readCookie(request, AI_OPENAI_ACCOUNT_DEVICE_COOKIE);
+  const verified = verifySignedDataCookie<OpenAiAccountDeviceCookieData>(
+    rawDevice,
+    DEVICE_PURPOSE,
+    now,
+  );
+  return {
+    data:
+      verified.valid && verified.data && verified.expiresAt !== null
+        ? { ...verified.data, expiresAt: verified.expiresAt }
+        : null,
+    clearCookie: rawDevice !== null && !verified.valid,
+  };
+}
+
+export function setOpenAiAccountDeviceCookie(
+  response: NextResponse<unknown>,
+  data: OpenAiAccountDeviceCookieData,
+  expiresAt: number,
+  now = Date.now(),
+): number {
+  const cookie = createSignedDataCookie(DEVICE_PURPOSE, data, expiresAt, now);
+  response.cookies.set({
+    name: AI_OPENAI_ACCOUNT_DEVICE_COOKIE,
+    value: cookie.value,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: cookie.maxAge,
+  });
+  return cookie.expiresAt;
+}
+
+export function getOpenAiAccountTokenSessionCookie(
+  request?: Request,
+  now = Date.now(),
+): VerifiedOpenAiAccountTokenSessionCookie {
+  const rawTokenSession = readCookie(
+    request,
+    AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE,
+  );
+  const verified = verifySignedDataCookie<OpenAiAccountTokenSessionCookieData>(
+    rawTokenSession,
+    TOKEN_SESSION_PURPOSE,
+    now,
+  );
+  return {
+    data:
+      verified.valid && verified.data && verified.expiresAt !== null
+        ? { ...verified.data, expiresAt: verified.expiresAt }
+        : null,
+    clearCookie: rawTokenSession !== null && !verified.valid,
+  };
+}
+
+export function setOpenAiAccountTokenSessionCookie(
+  response: NextResponse<unknown>,
+  sessionId: string,
+  expiresAt: number,
+  now = Date.now(),
+): number {
+  const cookie = createSignedDataCookie(
+    TOKEN_SESSION_PURPOSE,
+    { sessionId },
+    expiresAt,
+    now,
+  );
+  response.cookies.set({
+    name: AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE,
+    value: cookie.value,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: cookie.maxAge,
+  });
+  return cookie.expiresAt;
+}
+
 export function clearOpenAiAccountSessionCookie(
   response: NextResponse<unknown>,
 ): void {
@@ -201,6 +396,28 @@ export function clearPendingOpenAiAccountSessionCookie(
 ): void {
   response.cookies.set({
     name: AI_OPENAI_ACCOUNT_PENDING_COOKIE,
+    value: '',
+    path: '/',
+    maxAge: 0,
+  });
+}
+
+export function clearOpenAiAccountDeviceCookie(
+  response: NextResponse<unknown>,
+): void {
+  response.cookies.set({
+    name: AI_OPENAI_ACCOUNT_DEVICE_COOKIE,
+    value: '',
+    path: '/',
+    maxAge: 0,
+  });
+}
+
+export function clearOpenAiAccountTokenSessionCookie(
+  response: NextResponse<unknown>,
+): void {
+  response.cookies.set({
+    name: AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE,
     value: '',
     path: '/',
     maxAge: 0,

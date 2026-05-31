@@ -1,6 +1,11 @@
 export type AiProviderPreference = 'auto' | 'openai-api' | 'codex-cli' | 'off';
 
-export type AiActiveProvider = 'openai-api' | 'codex-cli' | 'none' | 'off';
+export type AiActiveProvider =
+  | 'openai-account'
+  | 'openai-api'
+  | 'codex-cli'
+  | 'none'
+  | 'off';
 
 type EnvLike = Record<string, string | undefined>;
 
@@ -31,15 +36,21 @@ export function getOpenAiApiKey(
 
 export function resolveActiveAiProvider(
   preference: AiProviderPreference,
-  options: { hasOpenAiApiKey: boolean; hasCodexChatGptAuth: boolean },
+  options: {
+    hasOpenAiApiKey: boolean;
+    hasCodexChatGptAuth: boolean;
+    hasOpenAiAccountAuth?: boolean;
+  },
 ): AiActiveProvider {
   if (preference === 'off') return 'off';
   if (preference === 'openai-api') {
     return options.hasOpenAiApiKey ? 'openai-api' : 'none';
   }
   if (preference === 'codex-cli') {
-    return options.hasCodexChatGptAuth ? 'codex-cli' : 'none';
+    if (options.hasCodexChatGptAuth) return 'codex-cli';
+    return options.hasOpenAiAccountAuth ? 'openai-account' : 'none';
   }
+  if (options.hasOpenAiAccountAuth) return 'openai-account';
   if (options.hasCodexChatGptAuth) return 'codex-cli';
   if (options.hasOpenAiApiKey) return 'openai-api';
   return 'none';
