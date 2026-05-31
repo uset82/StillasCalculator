@@ -13,7 +13,16 @@ describe('AI auth provider selection', () => {
     );
   });
 
-  it('prefers hosted OpenAI account auth in auto mode and falls back through Codex CLI to a Platform API key', () => {
+  it('accepts openai-account and ChatGPT aliases as the account provider', () => {
+    expect(
+      getAiProviderPreference({ STILLAS_AI_PROVIDER: 'openai-account' }),
+    ).toBe('openai-account');
+    expect(getAiProviderPreference({ STILLAS_AI_PROVIDER: 'chatgpt' })).toBe(
+      'openai-account',
+    );
+  });
+
+  it('prefers signed-in OpenAI account auth in auto mode before API-key auth', () => {
     expect(
       resolveActiveAiProvider('auto', {
         hasOpenAiApiKey: true,
@@ -42,6 +51,24 @@ describe('AI auth provider selection', () => {
         hasCodexChatGptAuth: false,
       }),
     ).toBe('openai-api');
+  });
+
+  it('requires a user account session for explicit openai-account mode', () => {
+    expect(
+      resolveActiveAiProvider('openai-account', {
+        hasOpenAiApiKey: true,
+        hasCodexChatGptAuth: true,
+        hasOpenAiAccountAuth: false,
+      }),
+    ).toBe('none');
+
+    expect(
+      resolveActiveAiProvider('openai-account', {
+        hasOpenAiApiKey: true,
+        hasCodexChatGptAuth: false,
+        hasOpenAiAccountAuth: true,
+      }),
+    ).toBe('openai-account');
   });
 
   it('does not treat non-ChatGPT Codex auth as an active Codex provider', () => {

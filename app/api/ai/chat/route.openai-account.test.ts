@@ -1,54 +1,20 @@
 // @vitest-environment node
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { NextResponse } from 'next/server';
 
-const mocks = vi.hoisted(() => ({
-  openAiConstructorOptions: [] as unknown[],
-  runOpenAiAgentWithTools: vi.fn(),
-  loadOpenAiAccountTokens: vi.fn(),
-  saveOpenAiAccountTokens: vi.fn(),
-  deleteOpenAiAccountTokens: vi.fn(),
-  refreshOpenAiAccountTokens: vi.fn(),
-  shouldRefreshOpenAiAccountTokens: vi.fn(),
+vi.mock('@/lib/ai/codexBackendClient', () => ({
+  sendCodexBackendChatRequest: vi.fn(),
 }));
-
-vi.mock('openai', () => ({
-  default: class MockOpenAI {
-    constructor(options?: unknown) {
-      mocks.openAiConstructorOptions.push(options);
-    }
-  },
-}));
-
-vi.mock('@/lib/ai/openAiAgentLoop', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/ai/openAiAgentLoop')>();
-  return {
-    ...actual,
-    runOpenAiAgentWithTools: mocks.runOpenAiAgentWithTools,
-  };
-});
-
-vi.mock('@/lib/server/openAiAccountTokenStore', () => ({
-  loadOpenAiAccountTokens: mocks.loadOpenAiAccountTokens,
-  saveOpenAiAccountTokens: mocks.saveOpenAiAccountTokens,
-  deleteOpenAiAccountTokens: mocks.deleteOpenAiAccountTokens,
-}));
-
-vi.mock('@/lib/ai/openAiDeviceAuth', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/ai/openAiDeviceAuth')>();
-  return {
-    ...actual,
-    refreshOpenAiAccountTokens: mocks.refreshOpenAiAccountTokens,
-    shouldRefreshOpenAiAccountTokens: mocks.shouldRefreshOpenAiAccountTokens,
-  };
-});
 
 import { POST } from './route';
+import { sendCodexBackendChatRequest } from '@/lib/ai/codexBackendClient';
 import {
-  AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE,
-  setOpenAiAccountTokenSessionCookie,
+  AI_CODEX_BACKEND_SESSION_COOKIE,
+  setCodexBackendSessionCookie,
 } from '@/lib/server/aiUserSession';
+
+const mockBackendChat = sendCodexBackendChatRequest as unknown as Mock;
 
 function getSetCookieValue(setCookie: string, name: string): string {
   const match = new RegExp(`${name}=([^;,]+)`).exec(setCookie);
@@ -56,22 +22,22 @@ function getSetCookieValue(setCookie: string, name: string): string {
   return match[1];
 }
 
-function requestWithHostedTokenSession(): Request {
+function requestWithBackendSession(): Request {
   const response = NextResponse.json({});
-  setOpenAiAccountTokenSessionCookie(
+  setCodexBackendSessionCookie(
     response,
-    'hosted-token-session',
+    'backend-session',
     Date.now() + 24 * 60 * 60_000,
   );
   const value = getSetCookieValue(
     response.headers.get('set-cookie') ?? '',
-    AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE,
+    AI_CODEX_BACKEND_SESSION_COOKIE,
   );
   return new Request('http://localhost/api/ai/chat', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      cookie: `${AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE}=${value}`,
+      cookie: `${AI_CODEX_BACKEND_SESSION_COOKIE}=${value}`,
     },
     body: JSON.stringify({
       sessionId: 'chat-session',
@@ -83,53 +49,66 @@ function requestWithHostedTokenSession(): Request {
           timestamp: 1_000,
         },
       ],
+      projectState: { scaffoldLengthMeters: 12 },
     }),
   });
 }
 
-describe('POST /api/ai/chat — hosted OpenAI account auth', () => {
+describe('POST /api/ai/chat — Codex backend account auth', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
-    mocks.openAiConstructorOptions.length = 0;
-    mocks.shouldRefreshOpenAiAccountTokens.mockReturnValue(false);
-    mocks.runOpenAiAgentWithTools.mockResolvedValue({
+    vi.stubEnv('STILLAS_AI_PROVIDER', 'openai-account');
+    mockBackendChat.mockResolvedValue({
+      ok: true,
       reply: 'Account-backed reply',
-      toolResults: [],
-    });
-    mocks.loadOpenAiAccountTokens.mockResolvedValue({
-      expiresAt: Date.now() + 24 * 60 * 60_000,
-      tokens: {
-        idToken: 'id-token',
-        accessToken: 'chatgpt-access-token',
-        refreshToken: 'refresh-token',
-        accountId: 'account-123',
-        email: 'user@example.com',
-        planType: 'plus',
-        accessTokenExpiresAt: Date.now() + 60_000,
-        idTokenExpiresAt: Date.now() + 60_000,
-      },
+      toolResults: [{ tool: 'getScaffoldPlan', ok: true, data: { ok: true } }],
+      scaffoldPlan: { scaffoldLengthMeters: 12 },
     });
   });
 
-  it('prefers the signed-in OpenAI account over the Platform API in auto mode and keeps app tools enabled', async () => {
-    vi.stubEnv('STILLAS_AI_PROVIDER', 'auto');
-    vi.stubEnv('OPENAI_API_KEY', 'platform-api-key');
-
-    const response = await POST(requestWithHostedTokenSession());
+  it('proxies account-mode chat requests to the Codex backend session', async () => {
+    const response = await POST(requestWithBackendSession());
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(body.reply).toBe('Account-backed reply');
-    expect(mocks.runOpenAiAgentWithTools).toHaveBeenCalledTimes(1);
-    expect(mocks.runOpenAiAgentWithTools.mock.calls[0][5]).toBe('gpt-5.3-codex');
-    expect(mocks.openAiConstructorOptions[0]).toMatchObject({
-      apiKey: 'chatgpt-access-token',
-      baseURL: 'https://chatgpt.com/backend-api/codex',
-      defaultHeaders: {
-        originator: 'codex_cli_rs',
-        'ChatGPT-Account-ID': 'account-123',
-      },
+    expect(body.toolResults).toHaveLength(1);
+    expect(mockBackendChat).toHaveBeenCalledWith(
+      'backend-session',
+      expect.objectContaining({
+        sessionId: 'chat-session',
+        messages: expect.any(Array),
+        projectState: expect.objectContaining({ scaffoldLengthMeters: 12 }),
+      }),
+    );
+  });
+
+  it('returns unavailable when account mode has no backend session cookie', async () => {
+    const response = await POST(
+      new Request('http://localhost/api/ai/chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ messages: [] }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.unavailable).toBe(true);
+    expect(mockBackendChat).not.toHaveBeenCalled();
+  });
+
+  it('maps backend chat failures to route errors', async () => {
+    mockBackendChat.mockResolvedValue({
+      ok: false,
+      error: 'The Codex backend request failed.',
     });
+
+    const response = await POST(requestWithBackendSession());
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.error).toBe('The Codex backend request failed.');
   });
 });

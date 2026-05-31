@@ -6,99 +6,75 @@ vi.mock('@/lib/ai/codexSdkAdapter', () => ({
   startCodexChatGptSignIn: vi.fn(),
 }));
 
-vi.mock('@/lib/ai/openAiDeviceAuth', () => ({
-  startOpenAiAccountDeviceAuth: vi.fn(),
+vi.mock('@/lib/ai/codexBackendClient', () => ({
+  startCodexBackendSignIn: vi.fn(),
 }));
 
 import { POST } from './route';
+import { startCodexBackendSignIn } from '@/lib/ai/codexBackendClient';
 import { startCodexChatGptSignIn } from '@/lib/ai/codexSdkAdapter';
-import { startOpenAiAccountDeviceAuth } from '@/lib/ai/openAiDeviceAuth';
 import {
-  AI_OPENAI_ACCOUNT_DEVICE_COOKIE,
+  AI_CODEX_BACKEND_SESSION_COOKIE,
   AI_OPENAI_ACCOUNT_PENDING_COOKIE,
   AI_OPENAI_ACCOUNT_SESSION_COOKIE,
 } from '@/lib/server/aiUserSession';
 
-const mockStartSignIn = startCodexChatGptSignIn as unknown as Mock;
-const mockStartHostedSignIn = startOpenAiAccountDeviceAuth as unknown as Mock;
+const mockStartLocalSignIn = startCodexChatGptSignIn as unknown as Mock;
+const mockStartBackendSignIn = startCodexBackendSignIn as unknown as Mock;
+
+function request(): Request {
+  return new Request('http://localhost/api/ai/auth/sign-in', {
+    method: 'POST',
+  });
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockStartHostedSignIn.mockResolvedValue({
+  vi.unstubAllEnvs();
+  vi.stubEnv('STILLAS_AI_PROVIDER', 'openai-account');
+  mockStartLocalSignIn.mockResolvedValue({
     ok: false,
-    message: 'Could not start OpenAI account sign-in.',
-    error: 'OpenAI device sign-in failed.',
+    message: 'Could not start OpenAI account sign-in through Codex.',
+    error: 'Codex CLI is not available.',
+  });
+  mockStartBackendSignIn.mockResolvedValue({
+    ok: false,
+    message: 'Could not start ChatGPT sign-in.',
+    error: 'Codex backend unavailable.',
   });
 });
 
 describe('POST /api/ai/auth/sign-in', () => {
-  it('returns Codex OpenAI account device-auth details to the app', async () => {
-    mockStartSignIn.mockResolvedValue({
+  it('does not start ChatGPT sign-in when the hosted API key provider is configured', async () => {
+    vi.stubEnv('STILLAS_AI_PROVIDER', 'openai-api');
+    vi.stubEnv('OPENAI_API_KEY', 'sk-test');
+
+    const response = await POST(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.ok).toBe(false);
+    expect(body.message).toContain('API provider');
+    expect(mockStartLocalSignIn).not.toHaveBeenCalled();
+    expect(mockStartBackendSignIn).not.toHaveBeenCalled();
+  });
+
+  it('starts ChatGPT device auth through the persistent Codex backend in account mode', async () => {
+    mockStartBackendSignIn.mockResolvedValue({
       ok: true,
       alreadyConnected: false,
-      message:
-        'Open the OpenAI sign-in link and enter the one-time code shown in the app.',
-      deviceAuth: {
-        verificationUri: 'https://auth.openai.com/codex/device',
-        userCode: 'ABCD-12345',
-        expiresAt: 1_000,
-      },
-    });
-
-    const response = await POST();
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(body.ok).toBe(true);
-    expect(body.deviceAuth).toEqual({
-      verificationUri: 'https://auth.openai.com/codex/device',
-      userCode: 'ABCD-12345',
-      expiresAt: 1_000,
-    });
-    expect(response.headers.get('set-cookie')).toContain(
-      AI_OPENAI_ACCOUNT_PENDING_COOKIE,
-    );
-  });
-
-  it('creates an app OpenAI account session when Codex is already ChatGPT-authenticated', async () => {
-    mockStartSignIn.mockResolvedValue({
-      ok: true,
-      alreadyConnected: true,
-      message: 'Your OpenAI account is already connected through Codex.',
-    });
-
-    const response = await POST();
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(body.ok).toBe(true);
-    expect(body.alreadyConnected).toBe(true);
-    expect(response.headers.get('set-cookie')).toContain(
-      AI_OPENAI_ACCOUNT_SESSION_COOKIE,
-    );
-  });
-
-  it('falls back to hosted OpenAI account device-auth when the Codex CLI is unavailable', async () => {
-    mockStartSignIn.mockResolvedValue({
-      ok: false,
-      message: 'Could not start OpenAI account sign-in through Codex.',
-      error: 'Codex CLI is not available.',
-    });
-    mockStartHostedSignIn.mockResolvedValue({
-      ok: true,
-      message:
-        'Open the OpenAI sign-in link and enter the one-time code shown in the app.',
+      message: 'Open the ChatGPT sign-in link and enter the one-time code shown in the app.',
+      expiresAt: 86_400_000,
       deviceAuth: {
         verificationUri: 'https://auth.openai.com/codex/device',
         userCode: 'WXYZ-98765',
-        deviceAuthId: 'device-auth-id',
-        intervalSeconds: 5,
         expiresAt: 2_000,
       },
     });
 
-    const response = await POST();
+    const response = await POST(request());
     const body = await response.json();
+    const setCookie = response.headers.get('set-cookie') ?? '';
 
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
@@ -107,23 +83,87 @@ describe('POST /api/ai/auth/sign-in', () => {
       userCode: 'WXYZ-98765',
       expiresAt: 2_000,
     });
-    const setCookie = response.headers.get('set-cookie') ?? '';
+    expect(mockStartBackendSignIn).toHaveBeenCalledTimes(1);
+    expect(mockStartLocalSignIn).not.toHaveBeenCalled();
+    expect(setCookie).toContain(AI_CODEX_BACKEND_SESSION_COOKIE);
     expect(setCookie).toContain(AI_OPENAI_ACCOUNT_PENDING_COOKIE);
-    expect(setCookie).toContain(AI_OPENAI_ACCOUNT_DEVICE_COOKIE);
   });
 
-  it('maps sign-in startup failures to a server error when no account flow can start', async () => {
-    mockStartSignIn.mockResolvedValue({
+  it('creates an app session when the backend already has ChatGPT auth', async () => {
+    mockStartBackendSignIn.mockResolvedValue({
+      ok: true,
+      alreadyConnected: true,
+      message: 'Your ChatGPT account is connected.',
+      expiresAt: 86_400_000,
+    });
+
+    const response = await POST(request());
+    const body = await response.json();
+    const setCookie = response.headers.get('set-cookie') ?? '';
+
+    expect(response.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.alreadyConnected).toBe(true);
+    expect(setCookie).toContain(AI_CODEX_BACKEND_SESSION_COOKIE);
+    expect(setCookie).toContain(AI_OPENAI_ACCOUNT_SESSION_COOKIE);
+  });
+
+  it('maps backend startup failures to a service error without falling back to private auth endpoints', async () => {
+    mockStartBackendSignIn.mockResolvedValue({
+      ok: false,
+      message: 'Could not start ChatGPT sign-in.',
+      error: 'Device code login is not enabled.',
+      deviceCodeRequired: true,
+    });
+
+    const response = await POST(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe('Device code login is not enabled.');
+    expect(mockStartLocalSignIn).not.toHaveBeenCalled();
+  });
+
+  it('keeps local Codex CLI sign-in for codex-cli mode', async () => {
+    vi.stubEnv('STILLAS_AI_PROVIDER', 'codex-cli');
+    mockStartLocalSignIn.mockResolvedValue({
+      ok: true,
+      alreadyConnected: false,
+      message: 'Open the OpenAI sign-in link and enter the one-time code shown in the app.',
+      deviceAuth: {
+        verificationUri: 'https://auth.openai.com/codex/device',
+        userCode: 'ABCD-12345',
+        expiresAt: 1_000,
+      },
+    });
+
+    const response = await POST(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.deviceAuth).toEqual({
+      verificationUri: 'https://auth.openai.com/codex/device',
+      userCode: 'ABCD-12345',
+      expiresAt: 1_000,
+    });
+    expect(mockStartBackendSignIn).not.toHaveBeenCalled();
+  });
+
+  it('does not use hosted direct auth as a fallback when local Codex CLI is unavailable', async () => {
+    vi.stubEnv('STILLAS_AI_PROVIDER', 'codex-cli');
+    mockStartLocalSignIn.mockResolvedValue({
       ok: false,
       message: 'Could not start OpenAI account sign-in through Codex.',
       error: 'Codex CLI is not available.',
     });
 
-    const response = await POST();
+    const response = await POST(request());
     const body = await response.json();
 
     expect(response.status).toBe(500);
     expect(body.ok).toBe(false);
-    expect(body.error).toBe('OpenAI device sign-in failed.');
+    expect(body.error).toBe('Codex CLI is not available.');
+    expect(mockStartBackendSignIn).not.toHaveBeenCalled();
   });
 });

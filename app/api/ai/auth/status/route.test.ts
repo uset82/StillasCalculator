@@ -1,7 +1,15 @@
 // @vitest-environment node
 
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { NextResponse } from 'next/server';
+
+vi.mock('@/lib/ai/codexBackendClient', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/ai/codexBackendClient')>();
+  return {
+    ...actual,
+    getCodexBackendAuthStatus: vi.fn(),
+  };
+});
 
 vi.mock('@/lib/ai/codexSdkAdapter', () => ({
   getCodexCliAuthStatus: vi.fn(),
@@ -11,51 +19,44 @@ vi.mock('@/lib/ai/mcpBridge', () => ({
   ensurePersistentMcpToolBridge: vi.fn(),
 }));
 
-vi.mock('@/lib/ai/openAiDeviceAuth', () => ({
-  pollOpenAiAccountDeviceAuth: vi.fn(),
-}));
-
-vi.mock('@/lib/server/openAiAccountTokenStore', () => ({
-  loadOpenAiAccountTokens: vi.fn(),
-  newOpenAiAccountTokenSessionId: vi.fn(),
-  openAiAccountTokenSessionExpiresAt: vi.fn(),
-  saveOpenAiAccountTokens: vi.fn(),
-}));
-
 import { GET } from './route';
+import { getCodexBackendAuthStatus } from '@/lib/ai/codexBackendClient';
 import { getCodexCliAuthStatus } from '@/lib/ai/codexSdkAdapter';
 import { ensurePersistentMcpToolBridge } from '@/lib/ai/mcpBridge';
-import { pollOpenAiAccountDeviceAuth } from '@/lib/ai/openAiDeviceAuth';
 import {
-  loadOpenAiAccountTokens,
-  newOpenAiAccountTokenSessionId,
-  openAiAccountTokenSessionExpiresAt,
-  saveOpenAiAccountTokens,
-} from '@/lib/server/openAiAccountTokenStore';
-import {
-  AI_OPENAI_ACCOUNT_DEVICE_COOKIE,
+  AI_CODEX_BACKEND_SESSION_COOKIE,
   AI_OPENAI_ACCOUNT_PENDING_COOKIE,
   AI_OPENAI_ACCOUNT_SESSION_COOKIE,
   AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE,
   createOpenAiAccountSessionCookieValue,
   createPendingOpenAiAccountSessionCookieValue,
-  setOpenAiAccountDeviceCookie,
-  setOpenAiAccountTokenSessionCookie,
+  setCodexBackendSessionCookie,
 } from '@/lib/server/aiUserSession';
 
+const mockBackendStatus = getCodexBackendAuthStatus as unknown as Mock;
 const mockCodexAuth = getCodexCliAuthStatus as unknown as Mock;
 const mockMcpBridge = ensurePersistentMcpToolBridge as unknown as Mock;
-const mockPollDeviceAuth = pollOpenAiAccountDeviceAuth as unknown as Mock;
-const mockLoadOpenAiAccountTokens = loadOpenAiAccountTokens as unknown as Mock;
-const mockNewTokenSessionId = newOpenAiAccountTokenSessionId as unknown as Mock;
-const mockTokenSessionExpiresAt =
-  openAiAccountTokenSessionExpiresAt as unknown as Mock;
-const mockSaveOpenAiAccountTokens = saveOpenAiAccountTokens as unknown as Mock;
 
 function requestWithCookie(name: string, value: string): Request {
   return new Request('http://localhost/api/ai/auth/status', {
     headers: { cookie: `${name}=${value}` },
   });
+}
+
+function getSetCookieValue(setCookie: string, name: string): string {
+  const match = new RegExp(`${name}=([^;,]+)`).exec(setCookie);
+  if (!match) throw new Error(`Missing ${name} in Set-Cookie header.`);
+  return match[1];
+}
+
+function requestWithBackendSession(sessionId = 'backend-session'): Request {
+  const response = NextResponse.json({});
+  setCodexBackendSessionCookie(response, sessionId, Date.now() + 86_400_000);
+  const value = getSetCookieValue(
+    response.headers.get('set-cookie') ?? '',
+    AI_CODEX_BACKEND_SESSION_COOKIE,
+  );
+  return requestWithCookie(AI_CODEX_BACKEND_SESSION_COOKIE, value);
 }
 
 function requestWithOpenAiAccountSession(): Request {
@@ -65,67 +66,132 @@ function requestWithOpenAiAccountSession(): Request {
   );
 }
 
-function getSetCookieValue(setCookie: string, name: string): string {
-  const match = new RegExp(`${name}=([^;,]+)`).exec(setCookie);
-  if (!match) throw new Error(`Missing ${name} in Set-Cookie header.`);
-  return match[1];
-}
-
-function requestWithHostedDeviceSignIn(): Request {
-  const expiresAt = Date.now() + 15 * 60_000;
-  const pending = createPendingOpenAiAccountSessionCookieValue(expiresAt);
-  const response = NextResponse.json({});
-  setOpenAiAccountDeviceCookie(
-    response,
-    {
-      verificationUri: 'https://auth.openai.com/codex/device',
-      userCode: 'ABCD-12345',
-      deviceAuthId: 'device-auth-id',
-      intervalSeconds: 5,
-    },
-    expiresAt,
-  );
-  const deviceValue = getSetCookieValue(
-    response.headers.get('set-cookie') ?? '',
-    AI_OPENAI_ACCOUNT_DEVICE_COOKIE,
-  );
-  return new Request('http://localhost/api/ai/auth/status', {
-    headers: {
-      cookie: `${AI_OPENAI_ACCOUNT_PENDING_COOKIE}=${pending.value}; ${AI_OPENAI_ACCOUNT_DEVICE_COOKIE}=${deviceValue}`,
-    },
-  });
-}
-
-function requestWithHostedTokenSession(sessionId = 'token-session'): Request {
-  const response = NextResponse.json({});
-  setOpenAiAccountTokenSessionCookie(
-    response,
-    sessionId,
-    Date.now() + 24 * 60 * 60_000,
-  );
-  const value = getSetCookieValue(
-    response.headers.get('set-cookie') ?? '',
-    AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE,
-  );
-  return requestWithCookie(AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE, value);
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
-  mockLoadOpenAiAccountTokens.mockResolvedValue(null);
-  mockNewTokenSessionId.mockReturnValue('hosted-token-session');
-  mockTokenSessionExpiresAt.mockReturnValue(50_000);
-  mockSaveOpenAiAccountTokens.mockResolvedValue(undefined);
-  mockPollDeviceAuth.mockResolvedValue({ status: 'pending' });
+  vi.stubEnv('STILLAS_AI_PROVIDER', 'openai-account');
+  mockBackendStatus.mockResolvedValue({
+    ok: false,
+    authenticated: false,
+    pending: false,
+    expiresAt: null,
+    error: 'Codex backend unavailable.',
+  });
+  mockCodexAuth.mockResolvedValue({ loggedIn: false, method: null });
+  mockMcpBridge.mockResolvedValue({
+    connected: true,
+    persistent: true,
+    toolCount: 16,
+    missingTools: [],
+    checkedAt: 1_000,
+  });
 });
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
+describe('GET /api/ai/auth/status', () => {
+  it('reports account mode as unauthenticated before a backend session exists', async () => {
+    const response = await GET(new Request('http://localhost/api/ai/auth/status'));
+    const body = await response.json();
 
-describe('GET /api/ai/auth/status: Codex MCP bridge readiness', () => {
-  it('reports Codex usable only when the persistent MCP bridge is connected', async () => {
+    expect(body.providerPreference).toBe('openai-account');
+    expect(body.activeProvider).toBe('none');
+    expect(body.canUseAssistant).toBe(false);
+    expect(body.openAiAccountSession.authenticated).toBe(false);
+    expect(mockBackendStatus).not.toHaveBeenCalled();
+  });
+
+  it('reports pending ChatGPT device-code auth from the backend', async () => {
+    mockBackendStatus.mockResolvedValue({
+      ok: true,
+      authenticated: false,
+      pending: true,
+      expiresAt: 86_400_000,
+      deviceAuth: {
+        verificationUri: 'https://auth.openai.com/codex/device',
+        userCode: 'ABCD-12345',
+        expiresAt: Date.now() + 15 * 60_000,
+      },
+    });
+
+    const response = await GET(requestWithBackendSession());
+    const body = await response.json();
+    const setCookie = response.headers.get('set-cookie') ?? '';
+
+    expect(body.activeProvider).toBe('none');
+    expect(body.openAiAccountSession.pending).toBe(true);
+    expect(body.setup.deviceCodeSettingsUrl).toContain('chatgpt.com');
+    expect(setCookie).toContain(AI_OPENAI_ACCOUNT_PENDING_COOKIE);
+  });
+
+  it('activates account mode when the Codex backend is authenticated', async () => {
+    mockBackendStatus.mockResolvedValue({
+      ok: true,
+      authenticated: true,
+      pending: false,
+      expiresAt: 86_400_000,
+    });
+
+    const response = await GET(requestWithBackendSession());
+    const body = await response.json();
+    const setCookie = response.headers.get('set-cookie') ?? '';
+
+    expect(body.activeProvider).toBe('openai-account');
+    expect(body.canUseAssistant).toBe(true);
+    expect(body.openAiAccountSession.authenticated).toBe(true);
+    expect(setCookie).toContain(AI_OPENAI_ACCOUNT_SESSION_COOKIE);
+    expect(setCookie).toContain(AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE);
+  });
+
+  it('surfaces backend unavailability separately from API-key setup', async () => {
+    mockBackendStatus.mockResolvedValue({
+      ok: false,
+      authenticated: false,
+      pending: false,
+      expiresAt: null,
+      error: 'The Codex backend is unavailable.',
+    });
+
+    const response = await GET(requestWithBackendSession());
+    const body = await response.json();
+
+    expect(body.activeProvider).toBe('none');
+    expect(body.canUseAssistant).toBe(false);
+    expect(body.openAiAccountSession.error).toBe(
+      'The Codex backend is unavailable.',
+    );
+  });
+
+  it('reports device-code settings guidance when the backend returns that error', async () => {
+    mockBackendStatus.mockResolvedValue({
+      ok: false,
+      authenticated: false,
+      pending: false,
+      expiresAt: null,
+      error: 'Device code login is not enabled in ChatGPT Security Settings.',
+      deviceCodeRequired: true,
+    });
+
+    const response = await GET(requestWithBackendSession());
+    const body = await response.json();
+
+    expect(body.openAiAccountSession.deviceCodeRequired).toBe(true);
+    expect(body.setup.deviceCodeSettingsUrl).toContain('Security');
+  });
+
+  it('does not start the MCP bridge when the active provider is the Platform API', async () => {
+    vi.stubEnv('STILLAS_AI_PROVIDER', 'openai-api');
+    vi.stubEnv('OPENAI_API_KEY', 'test-key');
+
+    const response = await GET(new Request('http://localhost/api/ai/auth/status'));
+    const body = await response.json();
+
+    expect(body.activeProvider).toBe('openai-api');
+    expect(body.canUseAssistant).toBe(true);
+    expect(body.openAiAccountSession.authenticated).toBe(false);
+    expect(mockMcpBridge).not.toHaveBeenCalled();
+    expect(mockBackendStatus).not.toHaveBeenCalled();
+  });
+
+  it('reports local Codex usable only when the app session and MCP bridge are connected', async () => {
     vi.stubEnv('STILLAS_AI_PROVIDER', 'codex-cli');
     mockCodexAuth.mockResolvedValue({ loggedIn: true, method: 'chatgpt' });
     mockMcpBridge.mockResolvedValue({
@@ -142,55 +208,10 @@ describe('GET /api/ai/auth/status: Codex MCP bridge readiness', () => {
     expect(body.activeProvider).toBe('codex-cli');
     expect(body.canUseAssistant).toBe(true);
     expect(body.openAiAccountSession.authenticated).toBe(true);
-    expect(body.mcp.connected).toBe(true);
     expect(mockMcpBridge).toHaveBeenCalledTimes(1);
   });
 
-  it('requires an app OpenAI account session before exposing the Codex SDK path', async () => {
-    vi.stubEnv('STILLAS_AI_PROVIDER', 'codex-cli');
-    mockCodexAuth.mockResolvedValue({ loggedIn: true, method: 'chatgpt' });
-
-    const response = await GET(new Request('http://localhost/api/ai/auth/status'));
-    const body = await response.json();
-
-    expect(body.activeProvider).toBe('none');
-    expect(body.canUseAssistant).toBe(false);
-    expect(body.openAiAccountSession).toEqual({
-      authenticated: false,
-      pending: false,
-      expiresAt: null,
-    });
-    expect(mockMcpBridge).not.toHaveBeenCalled();
-  });
-
-  it('promotes a pending app sign-in after Codex reports ChatGPT auth', async () => {
-    vi.stubEnv('STILLAS_AI_PROVIDER', 'codex-cli');
-    mockCodexAuth.mockResolvedValue({ loggedIn: true, method: 'chatgpt' });
-    mockMcpBridge.mockResolvedValue({
-      connected: true,
-      persistent: true,
-      toolCount: 16,
-      missingTools: [],
-      checkedAt: 1_000,
-    });
-    const pending = createPendingOpenAiAccountSessionCookieValue(
-      Date.now() + 15 * 60_000,
-    );
-
-    const response = await GET(
-      requestWithCookie(AI_OPENAI_ACCOUNT_PENDING_COOKIE, pending.value),
-    );
-    const body = await response.json();
-    const setCookie = response.headers.get('set-cookie') ?? '';
-
-    expect(body.activeProvider).toBe('codex-cli');
-    expect(body.canUseAssistant).toBe(true);
-    expect(body.openAiAccountSession.authenticated).toBe(true);
-    expect(setCookie).toContain(AI_OPENAI_ACCOUNT_SESSION_COOKIE);
-    expect(setCookie).toContain(AI_OPENAI_ACCOUNT_PENDING_COOKIE);
-  });
-
-  it('keeps the assistant unavailable when Codex is logged in but MCP tools are disconnected', async () => {
+  it('keeps local Codex unavailable when MCP tools are disconnected', async () => {
     vi.stubEnv('STILLAS_AI_PROVIDER', 'codex-cli');
     mockCodexAuth.mockResolvedValue({ loggedIn: true, method: 'chatgpt' });
     mockMcpBridge.mockResolvedValue({
@@ -210,97 +231,21 @@ describe('GET /api/ai/auth/status: Codex MCP bridge readiness', () => {
     expect(body.mcp.error).toBe('MCP bridge failed.');
   });
 
-  it('requires Codex to be signed in with a ChatGPT/OpenAI account, not an API key', async () => {
+  it('promotes a pending local app sign-in after Codex reports ChatGPT auth', async () => {
     vi.stubEnv('STILLAS_AI_PROVIDER', 'codex-cli');
-    mockCodexAuth.mockResolvedValue({ loggedIn: true, method: 'api-key' });
+    mockCodexAuth.mockResolvedValue({ loggedIn: true, method: 'chatgpt' });
+    const pending = createPendingOpenAiAccountSessionCookieValue(
+      Date.now() + 15 * 60_000,
+    );
 
-    const response = await GET(requestWithOpenAiAccountSession());
-    const body = await response.json();
-
-    expect(body.activeProvider).toBe('none');
-    expect(body.canUseAssistant).toBe(false);
-    expect(body.codexCli.method).toBe('api-key');
-    expect(mockMcpBridge).not.toHaveBeenCalled();
-  });
-
-  it('does not start the MCP bridge when the active provider is the Platform API', async () => {
-    vi.stubEnv('STILLAS_AI_PROVIDER', 'openai-api');
-    vi.stubEnv('OPENAI_API_KEY', 'test-key');
-    mockCodexAuth.mockResolvedValue({ loggedIn: false, method: null });
-
-    const response = await GET(new Request('http://localhost/api/ai/auth/status'));
-    const body = await response.json();
-
-    expect(body.activeProvider).toBe('openai-api');
-    expect(body.canUseAssistant).toBe(true);
-    expect(body.openAiAccountSession.authenticated).toBe(false);
-    expect(body.mcp.connected).toBe(false);
-    expect(mockMcpBridge).not.toHaveBeenCalled();
-  });
-
-  it('completes hosted OpenAI account device sign-in and activates the account-backed assistant', async () => {
-    vi.stubEnv('STILLAS_AI_PROVIDER', 'auto');
-    vi.stubEnv('OPENAI_API_KEY', 'test-key');
-    mockCodexAuth.mockResolvedValue({ loggedIn: false, method: null });
-    const tokens = {
-      idToken: 'id-token',
-      accessToken: 'access-token',
-      refreshToken: 'refresh-token',
-      accountId: 'account-123',
-      email: 'user@example.com',
-      planType: 'plus',
-      accessTokenExpiresAt: Date.now() + 60_000,
-      idTokenExpiresAt: Date.now() + 60_000,
-    };
-    mockPollDeviceAuth.mockResolvedValue({ status: 'completed', tokens });
-
-    const response = await GET(requestWithHostedDeviceSignIn());
+    const response = await GET(
+      requestWithCookie(AI_OPENAI_ACCOUNT_PENDING_COOKIE, pending.value),
+    );
     const body = await response.json();
     const setCookie = response.headers.get('set-cookie') ?? '';
 
-    expect(body.activeProvider).toBe('openai-account');
-    expect(body.canUseAssistant).toBe(true);
+    expect(body.activeProvider).toBe('codex-cli');
     expect(body.openAiAccountSession.authenticated).toBe(true);
-    expect(mockSaveOpenAiAccountTokens).toHaveBeenCalledWith(
-      'hosted-token-session',
-      tokens,
-      50_000,
-    );
     expect(setCookie).toContain(AI_OPENAI_ACCOUNT_SESSION_COOKIE);
-    expect(setCookie).toContain(AI_OPENAI_ACCOUNT_TOKEN_SESSION_COOKIE);
-    expect(setCookie).toContain(AI_OPENAI_ACCOUNT_PENDING_COOKIE);
-    expect(setCookie).toContain(AI_OPENAI_ACCOUNT_DEVICE_COOKIE);
-    expect(mockMcpBridge).not.toHaveBeenCalled();
-  });
-
-  it('prefers an existing hosted OpenAI account token session over the Platform API in auto mode', async () => {
-    vi.stubEnv('STILLAS_AI_PROVIDER', 'auto');
-    vi.stubEnv('OPENAI_API_KEY', 'test-key');
-    mockCodexAuth.mockResolvedValue({ loggedIn: false, method: null });
-    mockLoadOpenAiAccountTokens.mockResolvedValue({
-      expiresAt: 90_000,
-      tokens: {
-        idToken: 'id-token',
-        accessToken: 'access-token',
-        refreshToken: 'refresh-token',
-        accountId: 'account-123',
-        email: null,
-        planType: null,
-        accessTokenExpiresAt: Date.now() + 60_000,
-        idTokenExpiresAt: Date.now() + 60_000,
-      },
-    });
-
-    const response = await GET(requestWithHostedTokenSession());
-    const body = await response.json();
-
-    expect(body.activeProvider).toBe('openai-account');
-    expect(body.canUseAssistant).toBe(true);
-    expect(body.openAiAccountSession).toEqual({
-      authenticated: true,
-      pending: false,
-      expiresAt: 90_000,
-    });
-    expect(mockMcpBridge).not.toHaveBeenCalled();
   });
 });

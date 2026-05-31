@@ -1,25 +1,100 @@
 import { NextResponse } from 'next/server';
 
 import type { AiAuthSignInResponse } from '@/lib/ai/authStatus';
+import { startCodexBackendSignIn } from '@/lib/ai/codexBackendClient';
 import { startCodexChatGptSignIn } from '@/lib/ai/codexSdkAdapter';
-import { startOpenAiAccountDeviceAuth } from '@/lib/ai/openAiDeviceAuth';
+import { getAiProviderPreference } from '@/lib/server/aiAuth';
 import {
+  clearCodexBackendSessionCookie,
   clearOpenAiAccountDeviceCookie,
+  clearOpenAiAccountSessionCookie,
   clearPendingOpenAiAccountSessionCookie,
   clearOpenAiAccountTokenSessionCookie,
+  getCodexBackendSessionCookie,
+  newCodexBackendSessionId,
+  OPENAI_ACCOUNT_SESSION_MAX_AGE_SECONDS,
+  setCodexBackendSessionCookie,
   setOpenAiAccountSessionCookie,
-  setOpenAiAccountDeviceCookie,
   setPendingOpenAiAccountSessionCookie,
 } from '@/lib/server/aiUserSession';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function POST(): Promise<NextResponse<AiAuthSignInResponse>> {
+export async function POST(
+  request: Request,
+): Promise<NextResponse<AiAuthSignInResponse>> {
   const now = Date.now();
-  const result = await startCodexChatGptSignIn();
+  const providerPreference = getAiProviderPreference();
 
-  if (result.ok) {
+  if (providerPreference === 'off' || providerPreference === 'openai-api') {
+    return NextResponse.json(
+      {
+        ok: false,
+        message:
+          'OpenAI account sign-in is disabled while this deployment is configured for the API provider.',
+        error: 'OpenAI account sign-in is disabled for this provider.',
+      },
+      { status: 409 },
+    );
+  }
+
+  if (providerPreference === 'openai-account') {
+    const backendSession =
+      getCodexBackendSessionCookie(request, now).data?.sessionId ??
+      newCodexBackendSessionId();
+    const result = await startCodexBackendSignIn(backendSession);
+
+    if (!result.ok) {
+      const response = NextResponse.json(
+        {
+          ok: false,
+          message: result.message,
+          error: result.error,
+        },
+        { status: 503 },
+      );
+      clearOpenAiAccountSessionCookie(response);
+      clearPendingOpenAiAccountSessionCookie(response);
+      clearOpenAiAccountDeviceCookie(response);
+      clearOpenAiAccountTokenSessionCookie(response);
+      return response;
+    }
+
+    const response = NextResponse.json({
+      ok: true,
+      alreadyConnected: result.alreadyConnected,
+      message: result.message,
+      ...(result.deviceAuth ? { deviceAuth: result.deviceAuth } : {}),
+    });
+    const expiresAt =
+      result.expiresAt ?? now + OPENAI_ACCOUNT_SESSION_MAX_AGE_SECONDS * 1000;
+    setCodexBackendSessionCookie(response, backendSession, expiresAt, now);
+    clearOpenAiAccountTokenSessionCookie(response);
+
+    if (result.deviceAuth) {
+      setPendingOpenAiAccountSessionCookie(
+        response,
+        result.deviceAuth.expiresAt,
+        now,
+      );
+      clearOpenAiAccountSessionCookie(response);
+      clearOpenAiAccountDeviceCookie(response);
+    } else if (result.alreadyConnected) {
+      setOpenAiAccountSessionCookie(response, now);
+      clearPendingOpenAiAccountSessionCookie(response);
+      clearOpenAiAccountDeviceCookie(response);
+    }
+
+    return response;
+  }
+
+  const result =
+    providerPreference === 'codex-cli' || providerPreference === 'auto'
+      ? await startCodexChatGptSignIn()
+      : null;
+
+  if (result?.ok) {
     const response = NextResponse.json({
       ok: true,
       alreadyConnected: result.alreadyConnected,
@@ -39,48 +114,19 @@ export async function POST(): Promise<NextResponse<AiAuthSignInResponse>> {
       clearPendingOpenAiAccountSessionCookie(response);
       clearOpenAiAccountDeviceCookie(response);
       clearOpenAiAccountTokenSessionCookie(response);
+      clearCodexBackendSessionCookie(response);
     }
 
-    return response;
-  }
-
-  const hostedResult = await startOpenAiAccountDeviceAuth(now);
-  if (hostedResult.ok) {
-    const response = NextResponse.json({
-      ok: true,
-      alreadyConnected: false,
-      message: hostedResult.message,
-      deviceAuth: {
-        verificationUri: hostedResult.deviceAuth.verificationUri,
-        userCode: hostedResult.deviceAuth.userCode,
-        expiresAt: hostedResult.deviceAuth.expiresAt,
-      },
-    });
-    setPendingOpenAiAccountSessionCookie(
-      response,
-      hostedResult.deviceAuth.expiresAt,
-      now,
-    );
-    setOpenAiAccountDeviceCookie(
-      response,
-      {
-        verificationUri: hostedResult.deviceAuth.verificationUri,
-        userCode: hostedResult.deviceAuth.userCode,
-        deviceAuthId: hostedResult.deviceAuth.deviceAuthId,
-        intervalSeconds: hostedResult.deviceAuth.intervalSeconds,
-      },
-      hostedResult.deviceAuth.expiresAt,
-      now,
-    );
-    clearOpenAiAccountTokenSessionCookie(response);
     return response;
   }
 
   return NextResponse.json(
     {
       ok: false,
-      error: hostedResult.error || result.error,
-      message: hostedResult.message || result.message,
+      error: result?.error || 'OpenAI account sign-in failed.',
+      message:
+        result?.message ||
+        'Could not start OpenAI account sign-in.',
     },
     { status: 500 },
   );

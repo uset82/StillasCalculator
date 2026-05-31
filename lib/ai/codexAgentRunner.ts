@@ -39,6 +39,10 @@ export type CodexAgentResult =
     }
   | { ok: false; unavailable?: boolean; timedOut?: boolean; error: string };
 
+export interface CodexAgentRunOptions {
+  codexHome?: string;
+}
+
 function getCodexTimeoutMs(): number {
   const configured = Number(process.env.STILLAS_CODEX_TIMEOUT_MS);
   return Number.isFinite(configured) && configured > 0
@@ -104,8 +108,9 @@ export async function runCodexAgentWithTools(
   messages: readonly ChatMessage[],
   initialPlan: ScaffoldPlan,
   sessionId: string,
+  options: CodexAgentRunOptions = {},
 ): Promise<CodexAgentResult> {
-  const auth = await getCodexCliAuthStatus();
+  const auth = await getCodexCliAuthStatus({ codexHome: options.codexHome });
   if (!auth.loggedIn || auth.method !== 'chatgpt') {
     return {
       ok: false,
@@ -142,12 +147,24 @@ export async function runCodexAgentWithTools(
     }
 
     const mcpServer = buildStillasMcpServerConfig(planFile, sessionId);
+    const codexEnv = options.codexHome
+      ? {
+          ...Object.fromEntries(
+            Object.entries(process.env).filter(
+              (entry): entry is [string, string] =>
+                typeof entry[1] === 'string',
+            ),
+          ),
+          CODEX_HOME: options.codexHome,
+        }
+      : undefined;
     const codex = new Codex({
       config: {
         mcp_servers: {
           stillas: mcpServer,
         },
       },
+      ...(codexEnv ? { env: codexEnv } : {}),
     });
 
     const thread = codex.startThread({

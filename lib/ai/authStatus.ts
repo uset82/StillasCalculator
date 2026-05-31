@@ -20,6 +20,8 @@ export interface AiAuthStatusResponse {
     authenticated: boolean;
     pending: boolean;
     expiresAt: number | null;
+    error?: string;
+    deviceCodeRequired?: boolean;
   };
   mcp: {
     connected: boolean;
@@ -32,6 +34,7 @@ export interface AiAuthStatusResponse {
   setup: {
     chatGptSignInCommand: 'codex login';
     providerEnvValue: 'openai-codex';
+    deviceCodeSettingsUrl?: string;
   };
 }
 
