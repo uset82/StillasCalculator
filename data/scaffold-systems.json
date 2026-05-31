@@ -1,0 +1,47 @@
+[
+  {
+    "id": "generic-frame",
+    "displayName": "Generic Frame",
+    "defaultBayLengthMeters": 3.0,
+    "defaultScaffoldWidthMeters": 0.7,
+    "defaultLiftHeightMeters": 2.0,
+    "isPlaceholder": false,
+    "isCustom": false
+  },
+  {
+    "id": "haki",
+    "displayName": "HAKI (placeholder)",
+    "defaultBayLengthMeters": 3.05,
+    "defaultScaffoldWidthMeters": 0.75,
+    "defaultLiftHeightMeters": 2.0,
+    "isPlaceholder": true,
+    "isCustom": false
+  },
+  {
+    "id": "layher",
+    "displayName": "Layher (placeholder)",
+    "defaultBayLengthMeters": 3.07,
+    "defaultScaffoldWidthMeters": 0.73,
+    "defaultLiftHeightMeters": 2.0,
+    "isPlaceholder": true,
+    "isCustom": false
+  },
+  {
+    "id": "instant-alufase",
+    "displayName": "Instant / Alufase (placeholder)",
+    "defaultBayLengthMeters": 2.5,
+    "defaultScaffoldWidthMeters": 0.7,
+    "defaultLiftHeightMeters": 2.0,
+    "isPlaceholder": true,
+    "isCustom": false
+  },
+  {
+    "id": "custom",
+    "displayName": "Custom Dimensions",
+    "defaultBayLengthMeters": 3.0,
+    "defaultScaffoldWidthMeters": 0.7,
+    "defaultLiftHeightMeters": 2.0,
+    "isPlaceholder": false,
+    "isCustom": true
+  }
+]
