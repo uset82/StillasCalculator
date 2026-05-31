@@ -69,16 +69,12 @@ function getCookieSecret(): string {
     process.env.URL?.trim();
   if (configured) return configured;
 
-  if (
-    process.env.NODE_ENV === 'production' ||
-    process.env.NETLIFY ||
-    process.env.AWS_LAMBDA_FUNCTION_NAME
-  ) {
-    return PRODUCTION_FALLBACK_COOKIE_SECRET;
+  if (process.env.NODE_ENV === 'development') {
+    generatedCookieSecret ??= randomBytes(32).toString('hex');
+    return generatedCookieSecret;
   }
 
-  generatedCookieSecret ??= randomBytes(32).toString('hex');
-  return generatedCookieSecret;
+  return PRODUCTION_FALLBACK_COOKIE_SECRET;
 }
 
 function signPayload(payload: string): string {
