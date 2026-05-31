@@ -67,8 +67,8 @@ export function MobileBottomSheet({
         // The sheet is a fixed bottom overlay on mobile and a static,
         // always-visible flex side pane on desktop.
         className={cn(
-          "fixed inset-x-0 bottom-0 z-40 flex max-h-[85dvh] w-full flex-col rounded-t-2xl border-t border-gray-200 bg-white shadow-2xl transition-transform duration-300 ease-out will-change-transform",
-          "md:static md:z-auto md:h-full md:max-h-none md:w-80 md:flex-none md:rounded-none md:border-l md:border-t-0 md:shadow-none md:transition-none lg:w-96",
+          "fixed inset-x-0 bottom-0 z-40 flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl border-t border-gray-200 bg-white shadow-2xl transition-transform duration-300 ease-out will-change-transform",
+          "md:static md:z-auto md:h-full md:min-h-0 md:max-h-full md:w-80 md:flex-none md:rounded-none md:border-l md:border-t-0 md:shadow-none md:transition-none lg:w-96",
           open ? "translate-y-0" : "translate-y-full",
           // Always shown at the desktop breakpoint regardless of `open`.
           "md:translate-y-0",
@@ -97,7 +97,12 @@ export function MobileBottomSheet({
 
         {/* Scrollable panel area. Extra bottom padding on mobile keeps the last
             panel clear of the fixed launcher bar (h-16). */}
-        <div className="flex-1 overflow-y-auto p-4 pb-20 md:pb-4">{children}</div>
+        <div
+          data-testid="bottom-sheet-scroll-area"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-20 md:pb-4"
+        >
+          {children}
+        </div>
       </section>
     </>
   );

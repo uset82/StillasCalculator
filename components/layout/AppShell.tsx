@@ -107,7 +107,7 @@ export function AppShell({
   return (
     <div
       data-testid="app-shell"
-      className="flex h-[100dvh] max-w-[100vw] flex-col overflow-x-hidden bg-gray-50 text-gray-900"
+      className="flex h-[100dvh] max-h-[100dvh] w-full max-w-[100vw] flex-col overflow-hidden bg-gray-50 text-gray-900"
     >
       {/* Top bar. Kept compact so the map gets maximum space on small screens. */}
       <header className="flex h-12 flex-none items-center justify-between border-b border-gray-200 bg-white px-4">
@@ -115,12 +115,12 @@ export function AppShell({
       </header>
 
       {/* Main region: single column on mobile, two panes on desktop. */}
-      <div className="relative flex min-h-0 flex-1 flex-row">
+      <div className="relative flex min-h-0 flex-1 flex-row overflow-hidden">
         {/* Primary pane: the map. Always visible (Req 1.5). */}
         <main
           data-region="map"
           aria-label="Map"
-          className="relative min-h-0 min-w-0 flex-1"
+          className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
         >
           {map}
         </main>

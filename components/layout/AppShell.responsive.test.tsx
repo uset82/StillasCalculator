@@ -15,7 +15,7 @@ import { AppShell } from "./AppShell";
  * results, or `display:none` from utility classes. We therefore assert the
  * *documented Tailwind responsive class hooks* that drive each arrangement
  * (e.g. `md:hidden` on the mobile launcher, `md:block` on the side-pane panels,
- * `md:static` / `md:translate-y-0` on the sheet, `overflow-x-hidden` /
+ * `md:static` / `md:translate-y-0` on the sheet, `overflow-hidden` /
  * `max-w-[100vw]` on the root) rather than computed pixel geometry. These
  * classes are what produce the 320-1920px behaviour in a real browser. The
  * viewport width is still varied via `window.innerWidth` to document the
@@ -226,11 +226,17 @@ describe("Responsive arrangement across 320/375/768/1920px (Req 1.1, 1.2, 1.3, 1
       renderShell();
       expect(window.innerWidth).toBe(width);
 
-      // Root clamps width and clips horizontal overflow so there is no
-      // horizontal scrolling from 320-1920px (Req 1.1, 16.3).
+      // Root clamps the app to the viewport and clips page overflow so
+      // mouse/touch scrolling cannot move the whole app out of view.
       const shell = screen.getByTestId("app-shell");
-      expect(shell.className).toContain("overflow-x-hidden");
+      expect(shell.className).toContain("h-[100dvh]");
+      expect(shell.className).toContain("max-h-[100dvh]");
+      expect(shell.className).toContain("overflow-hidden");
       expect(shell.className).toContain("max-w-[100vw]");
+
+      const mapRegion = document.querySelector('[data-region="map"]');
+      expect(mapRegion).not.toBeNull();
+      expect(mapRegion?.className).toContain("overflow-hidden");
 
       // Mobile single-column launcher is hidden at the desktop breakpoint
       // (md:hidden) -> only shown for 320-767px (Req 1.2).
@@ -244,6 +250,13 @@ describe("Responsive arrangement across 320/375/768/1920px (Req 1.1, 1.2, 1.3, 1
       const sheet = screen.getByTestId("mobile-bottom-sheet");
       expect(sheet.className).toContain("md:static");
       expect(sheet.className).toContain("md:translate-y-0");
+      expect(sheet.className).toContain("overflow-hidden");
+      expect(sheet.className).toContain("md:min-h-0");
+
+      const scrollArea = screen.getByTestId("bottom-sheet-scroll-area");
+      expect(scrollArea.className).toContain("min-h-0");
+      expect(scrollArea.className).toContain("overflow-y-auto");
+      expect(scrollArea.className).toContain("overscroll-contain");
 
       // Each secondary panel is shown simultaneously at >=768px (md:block)
       // while only the active one shows on mobile (Req 1.3, and Req 11.2 for
