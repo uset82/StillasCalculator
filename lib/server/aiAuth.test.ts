@@ -13,13 +13,13 @@ describe('AI auth provider selection', () => {
     );
   });
 
-  it('prefers a Platform API key in auto mode and falls back to Codex CLI login', () => {
+  it('prefers OpenAI account/Codex auth in auto mode and falls back to a Platform API key', () => {
     expect(
       resolveActiveAiProvider('auto', {
         hasOpenAiApiKey: true,
         hasCodexChatGptAuth: true,
       }),
-    ).toBe('openai-api');
+    ).toBe('codex-cli');
 
     expect(
       resolveActiveAiProvider('auto', {
@@ -27,6 +27,13 @@ describe('AI auth provider selection', () => {
         hasCodexChatGptAuth: true,
       }),
     ).toBe('codex-cli');
+
+    expect(
+      resolveActiveAiProvider('auto', {
+        hasOpenAiApiKey: true,
+        hasCodexChatGptAuth: false,
+      }),
+    ).toBe('openai-api');
   });
 
   it('does not treat non-ChatGPT Codex auth as an active Codex provider', () => {

@@ -100,6 +100,47 @@ describe("AiChatPanel in-flight disabling (Req 12.3)", () => {
 });
 
 describe("AiChatPanel AI connection status", () => {
+  it("shows hosted OpenAI API tool access and still offers OpenAI account sign-in in auto mode", () => {
+    render(
+      <AiChatPanel
+        messages={SAMPLE_MESSAGES}
+        onSendMessage={vi.fn()}
+        authStatus={{
+          providerPreference: "auto",
+          activeProvider: "openai-api",
+          canUseAssistant: true,
+          openAiApiKeyConfigured: true,
+          codexCli: { loggedIn: false, method: null },
+          openAiAccountSession: {
+            authenticated: false,
+            pending: false,
+            expiresAt: null,
+          },
+          mcp: {
+            connected: false,
+            persistent: false,
+            toolCount: 0,
+            missingTools: [],
+            checkedAt: null,
+          },
+          setup: {
+            chatGptSignInCommand: "codex login",
+            providerEnvValue: "openai-codex",
+          },
+        }}
+        onStartChatGptSignIn={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("ai-auth-status")).toHaveTextContent(
+      "OpenAI API + app tools connected",
+    );
+    expect(screen.getByTestId("ai-auth-sign-in-button")).toHaveTextContent(
+      "Sign in with OpenAI",
+    );
+    expect(screen.getByTestId("ai-input-textarea")).not.toBeDisabled();
+  });
+
   it("shows ChatGPT/Codex account connection when the server reports Codex ChatGPT auth", () => {
     render(
       <AiChatPanel

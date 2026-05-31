@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 const LOGIN_STATUS_TIMEOUT_MS = 8_000;
 const SIGN_IN_OUTPUT_TIMEOUT_MS = 10_000;
@@ -44,12 +46,46 @@ interface ActiveDeviceSignIn {
 
 let activeDeviceSignIn: ActiveDeviceSignIn | null = null;
 
-function getCodexCommandCandidates(): string[] {
-  const candidates: string[] = [];
-  const add = (candidate: string | undefined) => {
-    const value = candidate?.trim();
-    if (value && !candidates.includes(value)) {
-      candidates.push(value);
+interface CodexCommandCandidate {
+  command: string;
+  baseArgs: string[];
+  key: string;
+}
+
+const requireFromHere = createRequire(import.meta.url);
+
+function getPackagedCodexEntrypoint(): string | undefined {
+  try {
+    const packageJsonPath = requireFromHere.resolve('@openai/codex/package.json');
+    return join(dirname(packageJsonPath), 'bin', 'codex.js');
+  } catch {
+    return undefined;
+  }
+}
+
+function getCodexProcessEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+
+  if (!env.CODEX_HOME && (env.NETLIFY || env.AWS_LAMBDA_FUNCTION_NAME)) {
+    const codexHome = join(tmpdir(), 'stillas-codex-home');
+    try {
+      mkdirSync(codexHome, { recursive: true });
+      env.CODEX_HOME = codexHome;
+    } catch {
+      // If /tmp is unexpectedly unavailable, let the CLI report the real error.
+    }
+  }
+
+  return env;
+}
+
+function getCodexCommandCandidates(): CodexCommandCandidate[] {
+  const candidates: CodexCommandCandidate[] = [];
+  const add = (command: string | undefined, baseArgs: string[] = []) => {
+    const value = command?.trim();
+    const key = [value, ...baseArgs].join('\0');
+    if (value && !candidates.some((candidate) => candidate.key === key)) {
+      candidates.push({ command: value, baseArgs, key });
     }
   };
 
@@ -77,6 +113,11 @@ function getCodexCommandCandidates(): string[] {
     add(join(projectBin, 'codex'));
   }
 
+  const packagedEntrypoint = getPackagedCodexEntrypoint();
+  if (packagedEntrypoint) {
+    add(process.execPath, [packagedEntrypoint]);
+  }
+
   add('codex');
   return candidates;
 }
@@ -86,15 +127,15 @@ function shouldUseShell(command: string): boolean {
 }
 
 function runProcess(
-  command: string,
+  candidate: CodexCommandCandidate,
   args: string[],
   { timeoutMs }: RunProcessOptions,
 ): Promise<ProcessResult> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, {
+    const child = spawn(candidate.command, [...candidate.baseArgs, ...args], {
       cwd: process.cwd(),
-      env: process.env,
-      shell: shouldUseShell(command),
+      env: getCodexProcessEnv(),
+      shell: shouldUseShell(candidate.command),
       windowsHide: true,
     });
 
@@ -159,8 +200,10 @@ function parseDeviceAuth(output: string):
   };
 }
 
-async function getCodexLoginStatus(command: string): Promise<CodexCliAuthStatus> {
-  const result = await runProcess(command, ['login', 'status'], {
+async function getCodexLoginStatus(
+  candidate: CodexCommandCandidate,
+): Promise<CodexCliAuthStatus> {
+  const result = await runProcess(candidate, ['login', 'status'], {
     timeoutMs: LOGIN_STATUS_TIMEOUT_MS,
   });
   const output = `${result.stdout}\n${result.stderr}`;
@@ -185,17 +228,19 @@ export async function getCodexCliAuthStatus(): Promise<CodexCliAuthStatus> {
   return findLoggedInCodex();
 }
 
-async function isUsableCodexCommand(command: string): Promise<boolean> {
-  const result = await runProcess(command, ['--version'], {
+async function isUsableCodexCommand(
+  candidate: CodexCommandCandidate,
+): Promise<boolean> {
+  const result = await runProcess(candidate, ['--version'], {
     timeoutMs: LOGIN_STATUS_TIMEOUT_MS,
   });
   return result.exitCode === 0 && /codex/i.test(`${result.stdout}\n${result.stderr}`);
 }
 
-async function findUsableCodexCommand(): Promise<string | null> {
-  for (const command of getCodexCommandCandidates()) {
-    if (await isUsableCodexCommand(command)) {
-      return command;
+async function findUsableCodexCommand(): Promise<CodexCommandCandidate | null> {
+  for (const candidate of getCodexCommandCandidates()) {
+    if (await isUsableCodexCommand(candidate)) {
+      return candidate;
     }
   }
   return null;
@@ -219,8 +264,8 @@ export async function startCodexChatGptSignIn(): Promise<CodexSignInResult> {
     return activeDeviceSignIn.result;
   }
 
-  const command = await findUsableCodexCommand();
-  if (!command) {
+  const candidate = await findUsableCodexCommand();
+  if (!candidate) {
     return {
       ok: false,
       error: 'Codex CLI is not available.',
@@ -232,10 +277,10 @@ export async function startCodexChatGptSignIn(): Promise<CodexSignInResult> {
     let settled = false;
     let output = '';
 
-    const child = spawn(command, ['login', '--device-auth'], {
+    const child = spawn(candidate.command, [...candidate.baseArgs, 'login', '--device-auth'], {
       cwd: process.cwd(),
-      env: process.env,
-      shell: shouldUseShell(command),
+      env: getCodexProcessEnv(),
+      shell: shouldUseShell(candidate.command),
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });

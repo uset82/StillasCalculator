@@ -40,7 +40,7 @@ export function resolveActiveAiProvider(
   if (preference === 'codex-cli') {
     return options.hasCodexChatGptAuth ? 'codex-cli' : 'none';
   }
-  if (options.hasOpenAiApiKey) return 'openai-api';
   if (options.hasCodexChatGptAuth) return 'codex-cli';
+  if (options.hasOpenAiApiKey) return 'openai-api';
   return 'none';
 }

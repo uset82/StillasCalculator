@@ -16,8 +16,8 @@ function cn(...classes: Array<string | false | null | undefined>): string {
 
 function getAuthStatusLabel(status: AiAuthStatusResponse | null | undefined): string {
   if (!status) return "Checking AI connection";
-  if (status.activeProvider === "openai-api") return "Platform API connected";
   if (status.openAiAccountSession.pending) return "Waiting for OpenAI sign-in";
+  if (status.activeProvider === "openai-api") return "OpenAI API + app tools connected";
   if (
     status.codexCli.loggedIn &&
     status.codexCli.method === "chatgpt" &&
@@ -51,6 +51,15 @@ function canStartChatGptSignIn(
   status: AiAuthStatusResponse | null | undefined,
 ): boolean {
   if (!status) return true;
+  if (
+    status.providerPreference === "auto" &&
+    status.activeProvider === "openai-api" &&
+    !status.openAiAccountSession.authenticated &&
+    !status.openAiAccountSession.pending
+  ) {
+    return true;
+  }
+
   const needsCodexChatGptAuth =
     !status.codexCli.loggedIn || status.codexCli.method !== "chatgpt";
   const needsAppOpenAiSession =
