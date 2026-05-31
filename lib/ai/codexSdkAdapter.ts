@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 
 const LOGIN_STATUS_TIMEOUT_MS = 8_000;
 const SIGN_IN_OUTPUT_TIMEOUT_MS = 10_000;
@@ -50,9 +50,38 @@ interface CodexCommandCandidate {
   command: string;
   baseArgs: string[];
   key: string;
+  pathDirs: string[];
 }
 
 const requireFromHere = createRequire(import.meta.url);
+
+const CODEX_NATIVE_PACKAGE_BY_TARGET: Record<string, string> = {
+  'x86_64-unknown-linux-musl': '@openai/codex-linux-x64',
+  'aarch64-unknown-linux-musl': '@openai/codex-linux-arm64',
+  'x86_64-apple-darwin': '@openai/codex-darwin-x64',
+  'aarch64-apple-darwin': '@openai/codex-darwin-arm64',
+  'x86_64-pc-windows-msvc': '@openai/codex-win32-x64',
+  'aarch64-pc-windows-msvc': '@openai/codex-win32-arm64',
+};
+
+function getCodexTargetTriple(): string | undefined {
+  if (process.platform === 'linux' || process.platform === 'android') {
+    if (process.arch === 'x64') return 'x86_64-unknown-linux-musl';
+    if (process.arch === 'arm64') return 'aarch64-unknown-linux-musl';
+  }
+
+  if (process.platform === 'darwin') {
+    if (process.arch === 'x64') return 'x86_64-apple-darwin';
+    if (process.arch === 'arm64') return 'aarch64-apple-darwin';
+  }
+
+  if (process.platform === 'win32') {
+    if (process.arch === 'x64') return 'x86_64-pc-windows-msvc';
+    if (process.arch === 'arm64') return 'aarch64-pc-windows-msvc';
+  }
+
+  return undefined;
+}
 
 function getPackagedCodexEntrypoint(): string | undefined {
   try {
@@ -63,7 +92,67 @@ function getPackagedCodexEntrypoint(): string | undefined {
   }
 }
 
-function getCodexProcessEnv(): NodeJS.ProcessEnv {
+function ensureExecutable(filePath: string): void {
+  if (process.platform === 'win32') return;
+
+  try {
+    chmodSync(filePath, 0o755);
+  } catch {
+    // If chmod is denied, let the later spawn call surface the real issue.
+  }
+}
+
+function getPackagedNativeCodexCommand():
+  | { executablePath: string; pathDirs: string[] }
+  | undefined {
+  const targetTriple = getCodexTargetTriple();
+  const platformPackage = targetTriple
+    ? CODEX_NATIVE_PACKAGE_BY_TARGET[targetTriple]
+    : undefined;
+  if (!targetTriple || !platformPackage) return undefined;
+
+  try {
+    const packageJsonPath = requireFromHere.resolve(`${platformPackage}/package.json`);
+    const vendorRoot = join(dirname(packageJsonPath), 'vendor');
+    const packageRoot = join(vendorRoot, targetTriple);
+    const binaryName = process.platform === 'win32' ? 'codex.exe' : 'codex';
+    const modernBinaryPath = join(packageRoot, 'bin', binaryName);
+    const legacyBinaryPath = join(packageRoot, 'codex', binaryName);
+    const executablePath = existsSync(modernBinaryPath)
+      ? modernBinaryPath
+      : existsSync(legacyBinaryPath)
+        ? legacyBinaryPath
+        : undefined;
+
+    if (!executablePath) return undefined;
+
+    ensureExecutable(executablePath);
+
+    return {
+      executablePath,
+      pathDirs: [join(packageRoot, 'codex-path'), join(packageRoot, 'path')].filter(
+        existsSync,
+      ),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function prependPathDirs(env: NodeJS.ProcessEnv, pathDirs: string[]): void {
+  if (pathDirs.length === 0) return;
+
+  const pathKey =
+    process.platform === 'win32'
+      ? Object.keys(env).find((key) => key.toLowerCase() === 'path') ?? 'Path'
+      : 'PATH';
+  const existingEntries = (env[pathKey] ?? '')
+    .split(delimiter)
+    .filter((entry) => entry && !pathDirs.includes(entry));
+  env[pathKey] = [...pathDirs, ...existingEntries].join(delimiter);
+}
+
+function getCodexProcessEnv(candidate?: CodexCommandCandidate): NodeJS.ProcessEnv {
   const env = { ...process.env };
 
   if (!env.CODEX_HOME && (env.NETLIFY || env.AWS_LAMBDA_FUNCTION_NAME)) {
@@ -76,16 +165,22 @@ function getCodexProcessEnv(): NodeJS.ProcessEnv {
     }
   }
 
+  prependPathDirs(env, candidate?.pathDirs ?? []);
+
   return env;
 }
 
 function getCodexCommandCandidates(): CodexCommandCandidate[] {
   const candidates: CodexCommandCandidate[] = [];
-  const add = (command: string | undefined, baseArgs: string[] = []) => {
+  const add = (
+    command: string | undefined,
+    baseArgs: string[] = [],
+    pathDirs: string[] = [],
+  ) => {
     const value = command?.trim();
-    const key = [value, ...baseArgs].join('\0');
+    const key = [value, ...baseArgs, ...pathDirs].join('\0');
     if (value && !candidates.some((candidate) => candidate.key === key)) {
-      candidates.push({ command: value, baseArgs, key });
+      candidates.push({ command: value, baseArgs, key, pathDirs });
     }
   };
 
@@ -113,6 +208,11 @@ function getCodexCommandCandidates(): CodexCommandCandidate[] {
     add(join(projectBin, 'codex'));
   }
 
+  const packagedNative = getPackagedNativeCodexCommand();
+  if (packagedNative) {
+    add(packagedNative.executablePath, [], packagedNative.pathDirs);
+  }
+
   const packagedEntrypoint = getPackagedCodexEntrypoint();
   if (packagedEntrypoint) {
     add(process.execPath, [packagedEntrypoint]);
@@ -134,7 +234,7 @@ function runProcess(
   return new Promise((resolve) => {
     const child = spawn(candidate.command, [...candidate.baseArgs, ...args], {
       cwd: process.cwd(),
-      env: getCodexProcessEnv(),
+      env: getCodexProcessEnv(candidate),
       shell: shouldUseShell(candidate.command),
       windowsHide: true,
     });
@@ -279,7 +379,7 @@ export async function startCodexChatGptSignIn(): Promise<CodexSignInResult> {
 
     const child = spawn(candidate.command, [...candidate.baseArgs, 'login', '--device-auth'], {
       cwd: process.cwd(),
-      env: getCodexProcessEnv(),
+      env: getCodexProcessEnv(candidate),
       shell: shouldUseShell(candidate.command),
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
