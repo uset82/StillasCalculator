@@ -61,12 +61,8 @@ export interface VerifiedOpenAiAccountTokenSessionCookie {
 
 function getCookieSecret(): string {
   const configured =
-    process.env.STILLAS_AI_AUTH_COOKIE_SECRET?.trim() ??
-    process.env.NEXTAUTH_SECRET?.trim() ??
-    process.env.OPENAI_API_KEY?.trim() ??
-    process.env.NETLIFY_SITE_ID?.trim() ??
-    process.env.SITE_ID?.trim() ??
-    process.env.URL?.trim();
+    process.env.STILLAS_AI_AUTH_COOKIE_SECRET?.trim() ||
+    process.env.NEXTAUTH_SECRET?.trim();
   if (configured) return configured;
 
   if (process.env.NODE_ENV === 'development') {
