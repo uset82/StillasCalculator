@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@openai/codex": "0.135.0",
     "@openai/codex-sdk": "^0.135.0",
     "@turf/turf": "^7.2.0",
     "maplibre-gl": "^5.6.0",
@@ -41,9 +40,5 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
-  },
-  "optionalDependencies": {
-    "@openai/codex-linux-arm64": "npm:@openai/codex@0.135.0-linux-arm64",
-    "@openai/codex-linux-x64": "npm:@openai/codex@0.135.0-linux-x64"
   }
 }

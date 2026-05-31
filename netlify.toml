@@ -5,11 +5,3 @@
 [build.environment]
   NODE_VERSION = "20"
   NEXT_TELEMETRY_DISABLED = "1"
-
-[functions]
-  included_files = [
-    "node_modules/@openai/codex/**/*",
-    "node_modules/@openai/codex-sdk/**/*",
-    "node_modules/@openai/codex-linux-x64/**/*",
-    "node_modules/@openai/codex-linux-arm64/**/*"
-  ]

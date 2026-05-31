@@ -366,6 +366,16 @@ export async function startCodexChatGptSignIn(): Promise<CodexSignInResult> {
 
   const candidate = await findUsableCodexCommand();
   if (!candidate) {
+    if (process.env.NETLIFY) {
+      return {
+        ok: false,
+        error:
+          'Codex account sign-in cannot run inside this Netlify Function because the native Codex CLI exceeds Netlify function size limits.',
+        message:
+          'The hosted assistant is still connected through the OpenAI API and app tools. To use ChatGPT account-based Codex auth, run the app with a separate Codex runtime backend or locally with the Codex CLI installed.',
+      };
+    }
+
     return {
       ok: false,
       error: 'Codex CLI is not available.',
