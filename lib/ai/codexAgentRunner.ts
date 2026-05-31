@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
-import { Codex, type McpToolCallItem, type ThreadEvent } from '@openai/codex-sdk';
+import type { Codex as CodexClient, McpToolCallItem, ThreadEvent } from '@openai/codex-sdk';
 
 import type { ChatMessage, ScaffoldPlan } from '@/lib/types';
 import { getSystemPrompt } from '@/lib/ai/systemPrompt';
@@ -41,6 +41,13 @@ export type CodexAgentResult =
 
 export interface CodexAgentRunOptions {
   codexHome?: string;
+}
+
+async function createCodexClient(
+  ...args: ConstructorParameters<typeof CodexClient>
+): Promise<CodexClient> {
+  const { Codex } = await import('@openai/codex-sdk');
+  return new Codex(...args);
 }
 
 function getCodexTimeoutMs(): number {
@@ -158,7 +165,7 @@ export async function runCodexAgentWithTools(
           CODEX_HOME: options.codexHome,
         }
       : undefined;
-    const codex = new Codex({
+    const codex = await createCodexClient({
       config: {
         mcp_servers: {
           stillas: mcpServer,

@@ -39,6 +39,7 @@ The backend:
 | `STILLAS_AI_PROVIDER` | `openai-account`, `auto`, `openai-api`, `codex-cli`, or `off` |
 | `STILLAS_CODEX_BACKEND_URL` | Netlify-to-backend URL, for example `https://codex-backend.example.com` |
 | `STILLAS_CODEX_BACKEND_SECRET` | Shared bearer secret for Netlify-to-backend requests. Set in Netlify UI/CLI, not in source control. |
+| `STILLAS_AI_AUTH_COOKIE_SECRET` | Optional cookie-signing secret. If omitted, the backend secret signs auth cookies. Keep this stable across deploys/restarts. |
 | `STILLAS_CODEX_DATA_DIR` | Backend-only persistent session root for per-user `CODEX_HOME` directories |
 | `STILLAS_CODEX_SESSION_TTL_SECONDS` | Backend session lifetime, default `86400` |
 | `OPENAI_API_KEY` | Optional server-only Platform key for `openai-api`. Do not use for account-required public mode. |

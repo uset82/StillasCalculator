@@ -13,6 +13,7 @@ import {
   getOpenAiApiKey,
   resolveActiveAiProvider,
 } from '@/lib/server/aiAuth';
+import { findAuthenticatedLocalCodexBackendSession } from '@/lib/server/localCodexBackendSessionRecovery';
 import {
   clearCodexBackendSessionCookie,
   clearOpenAiAccountDeviceCookie,
@@ -22,6 +23,8 @@ import {
   getCodexBackendSessionCookie,
   getOpenAiAccountSessionState,
   OPENAI_ACCOUNT_PENDING_MAX_AGE_SECONDS,
+  OPENAI_ACCOUNT_SESSION_MAX_AGE_SECONDS,
+  setCodexBackendSessionCookie,
   setOpenAiAccountSessionCookie,
   setPendingOpenAiAccountSessionCookie,
 } from '@/lib/server/aiUserSession';
@@ -57,10 +60,17 @@ export async function GET(
     let deviceCodeRequired: boolean | undefined;
     let mcp = disconnectedMcp();
     let pendingExpiresAt: number | null = null;
+    let backendSessionId = backendSession.data?.sessionId ?? null;
+    let recoveredBackendSession = false;
 
-    if (backendSession.data) {
+    if (!backendSessionId) {
+      backendSessionId = await findAuthenticatedLocalCodexBackendSession();
+      recoveredBackendSession = backendSessionId !== null;
+    }
+
+    if (backendSessionId) {
       const backendStatus = await getCodexBackendAuthStatus(
-        backendSession.data.sessionId,
+        backendSessionId,
       );
       authenticated = backendStatus.authenticated;
       pending = backendStatus.pending;
@@ -73,7 +83,8 @@ export async function GET(
           ? backendStatus.deviceAuth.expiresAt
           : pending
             ? Math.min(
-                backendSession.data.expiresAt,
+                backendSession.data?.expiresAt ??
+                  now + OPENAI_ACCOUNT_PENDING_MAX_AGE_SECONDS * 1000,
                 now + OPENAI_ACCOUNT_PENDING_MAX_AGE_SECONDS * 1000,
               )
             : null;
@@ -109,6 +120,14 @@ export async function GET(
     clearOpenAiAccountTokenSessionCookie(response);
     clearOpenAiAccountDeviceCookie(response);
     if (authenticated) {
+      if (recoveredBackendSession && backendSessionId) {
+        setCodexBackendSessionCookie(
+          response,
+          backendSessionId,
+          expiresAt ?? now + OPENAI_ACCOUNT_SESSION_MAX_AGE_SECONDS * 1000,
+          now,
+        );
+      }
       setOpenAiAccountSessionCookie(response, now);
       clearPendingOpenAiAccountSessionCookie(response);
     } else {

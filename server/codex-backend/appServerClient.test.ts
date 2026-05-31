@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyAccountNotification,
   isDeviceCodeSettingsError,
+  isDeviceAuthRateLimitError,
   parseAccountReadResult,
   parseDeviceLoginStartResult,
 } from './appServerClient';
@@ -109,5 +110,30 @@ describe('Codex app-server auth parsing', () => {
     expect(result.pending).toBe(false);
     expect(result.deviceCodeRequired).toBe(true);
     expect(isDeviceCodeSettingsError(result.error ?? '')).toBe(true);
+  });
+
+  it('normalizes device-code rate limit failures', () => {
+    const result = applyAccountNotification(
+      {
+        authenticated: false,
+        pending: true,
+        error: null,
+        deviceCodeRequired: false,
+        planType: null,
+      },
+      {
+        method: 'account/login/completed',
+        params: {
+          loginId: 'login-123',
+          success: false,
+          error: 'device auth failed with status 429 Too Many Requests',
+        },
+      },
+    );
+
+    expect(result.pending).toBe(false);
+    expect(result.deviceCodeRequired).toBe(false);
+    expect(result.error).toContain('temporarily rate-limited');
+    expect(isDeviceAuthRateLimitError(result.error ?? '')).toBe(true);
   });
 });

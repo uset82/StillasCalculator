@@ -173,8 +173,17 @@ export function AiChatPanel({
   decimalPlaces = 2,
   className,
 }: AiChatPanelProps) {
+  const hasActiveDeviceAuth =
+    authActionDeviceAuth !== null &&
+    authActionDeviceAuth.expiresAt > Date.now() &&
+    !authStatus?.openAiAccountSession.authenticated;
   const showChatGptSignIn =
-    onStartChatGptSignIn !== undefined && canStartChatGptSignIn(authStatus);
+    onStartChatGptSignIn !== undefined &&
+    !hasActiveDeviceAuth &&
+    canStartChatGptSignIn(authStatus);
+  const authStatusLabel = hasActiveDeviceAuth
+    ? "Waiting for OpenAI sign-in"
+    : getAuthStatusLabel(authStatus);
 
   return (
     <section
@@ -197,7 +206,7 @@ export function AiChatPanel({
               aria-hidden="true"
               className={cn("h-2 w-2 rounded-full", getAuthDotClass(authStatus))}
             />
-            {authStatusPending ? "Checking..." : getAuthStatusLabel(authStatus)}
+            {authStatusPending ? "Checking..." : authStatusLabel}
           </span>
           {onRefreshAuthStatus ? (
             <button

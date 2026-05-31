@@ -1,8 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { loadEnvFile } from 'node:process';
 
 import type { AiChatRequest } from '@/app/api/ai/chat/route';
 import { runCodexAgentWithTools } from '@/lib/ai/codexAgentRunner';
@@ -11,7 +13,9 @@ import type { ScaffoldPlan } from '@/lib/types';
 import {
   applyAccountNotification,
   CodexAppServerClient,
+  isDeviceAuthRateLimitError,
   isDeviceCodeSettingsError,
+  type CodexAccountState,
   type CodexDeviceLogin,
   type CodexLoginNotificationState,
 } from './appServerClient';
@@ -20,6 +24,19 @@ const DEFAULT_PORT = 8787;
 const DEFAULT_SESSION_TTL_SECONDS = 24 * 60 * 60;
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
+function loadLocalEnv(): void {
+  const localEnvPath = resolve(process.cwd(), '.env.local');
+  if (!existsSync(localEnvPath)) return;
+
+  try {
+    loadEnvFile(localEnvPath);
+  } catch {
+    // The backend can still run with process-level environment variables.
+  }
+}
+
+loadLocalEnv();
+
 interface BackendSession {
   id: string;
   dir: string;
@@ -27,6 +44,7 @@ interface BackendSession {
   lastAccessAt: number;
   client: CodexAppServerClient;
   pendingDeviceAuth: CodexDeviceLogin | null;
+  deviceAuthRetryAfter: number | null;
   authNotifications: CodexLoginNotificationState;
 }
 
@@ -142,6 +160,7 @@ class SessionManager {
       expiresAt: now + sessionTtlMs(),
       lastAccessAt: now,
       pendingDeviceAuth: null,
+      deviceAuthRetryAfter: null,
       authNotifications: {
         authenticated: false,
         pending: false,
@@ -159,6 +178,12 @@ class SessionManager {
           );
           if (session.authNotifications.authenticated) {
             session.pendingDeviceAuth = null;
+            session.deviceAuthRetryAfter = null;
+          } else if (
+            session.authNotifications.error &&
+            isDeviceAuthRateLimitError(session.authNotifications.error)
+          ) {
+            session.deviceAuthRetryAfter = Date.now() + 2 * 60_000;
           }
         },
       }),
@@ -193,6 +218,41 @@ class SessionManager {
 
 const sessions = new SessionManager();
 
+const DEVICE_AUTH_MESSAGE =
+  'Open the ChatGPT sign-in link and enter the one-time code shown in the app.';
+
+function syncSessionWithAccount(
+  session: BackendSession,
+  account: CodexAccountState,
+): void {
+  if (!account.authenticated) return;
+
+  session.pendingDeviceAuth = null;
+  session.deviceAuthRetryAfter = null;
+  session.authNotifications = {
+    ...session.authNotifications,
+    authenticated: true,
+    pending: false,
+    error: null,
+    deviceCodeRequired: false,
+    planType: account.planType,
+  };
+}
+
+function reusablePendingDeviceAuth(
+  session: BackendSession,
+  now = Date.now(),
+): CodexDeviceLogin | null {
+  if (!session.pendingDeviceAuth) return null;
+  if (session.pendingDeviceAuth.expiresAt <= now) {
+    session.pendingDeviceAuth = null;
+    return null;
+  }
+  return session.authNotifications.error === null
+    ? session.pendingDeviceAuth
+    : null;
+}
+
 async function handleStatus(body: unknown): Promise<{ status: number; body: unknown }> {
   const sessionId = stringOrNull(isRecord(body) ? body.sessionId : null);
   if (!sessionId) {
@@ -205,11 +265,10 @@ async function handleStatus(body: unknown): Promise<{ status: number; body: unkn
   const session = await sessions.get(sessionId);
   try {
     const account = await session.client.accountRead();
-    const pending =
-      !account.authenticated &&
-      session.pendingDeviceAuth !== null &&
-      session.pendingDeviceAuth.expiresAt > Date.now() &&
-      session.authNotifications.error === null;
+    syncSessionWithAccount(session, account);
+    const deviceAuth = reusablePendingDeviceAuth(session);
+    const pending = !account.authenticated && deviceAuth !== null;
+    const error = account.authenticated ? null : session.authNotifications.error;
     return {
       status: 200,
       body: {
@@ -217,13 +276,9 @@ async function handleStatus(body: unknown): Promise<{ status: number; body: unkn
         authenticated: account.authenticated,
         pending,
         expiresAt: session.expiresAt,
-        ...(pending && session.pendingDeviceAuth
-          ? { deviceAuth: session.pendingDeviceAuth }
-          : {}),
-        ...(session.authNotifications.error
-          ? { error: session.authNotifications.error }
-          : {}),
-        ...(session.authNotifications.deviceCodeRequired
+        ...(pending && deviceAuth ? { deviceAuth } : {}),
+        ...(error ? { error } : {}),
+        ...(!account.authenticated && session.authNotifications.deviceCodeRequired
           ? { deviceCodeRequired: true }
           : {}),
       },
@@ -256,7 +311,9 @@ async function handleSignIn(body: unknown): Promise<{ status: number; body: unkn
 
   const session = await sessions.get(sessionId);
   try {
+    const now = Date.now();
     const account = await session.client.accountRead();
+    syncSessionWithAccount(session, account);
     if (account.authenticated) {
       session.pendingDeviceAuth = null;
       return {
@@ -270,8 +327,38 @@ async function handleSignIn(body: unknown): Promise<{ status: number; body: unkn
       };
     }
 
+    const reusableDeviceAuth = reusablePendingDeviceAuth(session, now);
+    if (reusableDeviceAuth) {
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          alreadyConnected: false,
+          message: DEVICE_AUTH_MESSAGE,
+          expiresAt: session.expiresAt,
+          deviceAuth: reusableDeviceAuth,
+        },
+      };
+    }
+
+    if (
+      session.deviceAuthRetryAfter &&
+      session.deviceAuthRetryAfter > now &&
+      session.authNotifications.error
+    ) {
+      return {
+        status: 429,
+        body: {
+          ok: false,
+          message: 'ChatGPT sign-in is temporarily rate-limited.',
+          error: session.authNotifications.error,
+        },
+      };
+    }
+
     const deviceAuth = await session.client.startDeviceLogin();
     session.pendingDeviceAuth = deviceAuth;
+    session.deviceAuthRetryAfter = null;
     session.authNotifications = {
       ...session.authNotifications,
       pending: true,
@@ -283,22 +370,29 @@ async function handleSignIn(body: unknown): Promise<{ status: number; body: unkn
       body: {
         ok: true,
         alreadyConnected: false,
-        message:
-          'Open the ChatGPT sign-in link and enter the one-time code shown in the app.',
+        message: DEVICE_AUTH_MESSAGE,
         expiresAt: session.expiresAt,
         deviceAuth,
       },
     };
   } catch (error) {
-    const message =
+    const rawMessage =
       error instanceof Error ? error.message : 'Could not start ChatGPT sign-in.';
+    const rateLimited = isDeviceAuthRateLimitError(rawMessage);
+    if (rateLimited) {
+      session.deviceAuthRetryAfter = Date.now() + 2 * 60_000;
+    }
     return {
-      status: 503,
+      status: rateLimited ? 429 : 503,
       body: {
         ok: false,
-        message: 'Could not start ChatGPT sign-in.',
-        error: message,
-        ...(isDeviceCodeSettingsError(message) ? { deviceCodeRequired: true } : {}),
+        message: rateLimited
+          ? 'ChatGPT sign-in is temporarily rate-limited.'
+          : 'Could not start ChatGPT sign-in.',
+        error: rateLimited
+          ? 'ChatGPT sign-in is temporarily rate-limited after too many device-code attempts. Wait a few minutes, then start sign-in once and use the code already shown in the app.'
+          : rawMessage,
+        ...(isDeviceCodeSettingsError(rawMessage) ? { deviceCodeRequired: true } : {}),
       },
     };
   }
