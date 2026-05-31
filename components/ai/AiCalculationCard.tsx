@@ -25,6 +25,7 @@ const TOOL_LABELS: Record<string, string> = {
   generateReportSummary: "Report summary",
   getScaffoldPlan: "Scaffold plan",
   setBuildingPerimeter: "Building perimeter",
+  setBuildingPerimeterFromLocation: "Selected house perimeter",
   selectFacadeSides: "Facade selection",
   setScaffoldSystem: "Scaffold system",
   setScaffoldDimensions: "Scaffold dimensions",
@@ -32,6 +33,7 @@ const TOOL_LABELS: Record<string, string> = {
   clearScaffoldDrawing: "Clear drawing",
   generateCadModel: "CAD model",
   exportCadFormat: "CAD export",
+  retrieveBuildingFootprints: "Building footprints",
 };
 
 export interface AiCalculationCardProps {
@@ -84,6 +86,11 @@ function readString(record: Record<string, unknown>, key: string): string | unde
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function readArray(record: Record<string, unknown>, key: string): unknown[] | undefined {
+  const value = record[key];
+  return Array.isArray(value) ? value : undefined;
+}
+
 /**
  * Extracts the engine-computed scalar quantities present anywhere in a tool
  * result's `data` (Req 13.1, 13.6). Values are surfaced verbatim — only the
@@ -94,6 +101,8 @@ function readString(record: Record<string, unknown>, key: string): string | unde
 function extractQuantities(data: unknown, decimalPlaces: number): Quantity[] {
   const record = asRecord(data);
   const quantities: Quantity[] = [];
+  const measurements = asRecord(record.measurements);
+  const selectedCandidate = asRecord(record.selectedCandidate);
 
   const scaffoldLength =
     readNumber(record, "totalScaffoldLengthMeters") ??
@@ -103,6 +112,49 @@ function extractQuantities(data: unknown, decimalPlaces: number): Quantity[] {
       key: "scaffoldLength",
       label: "Scaffold length",
       value: `${formatMeasurement(scaffoldLength, decimalPlaces)} m`,
+    });
+  }
+
+  const perimeter =
+    readNumber(record, "perimeterMeters") ??
+    readNumber(measurements, "perimeterMeters") ??
+    readNumber(selectedCandidate, "perimeterMeters");
+  if (perimeter !== undefined) {
+    quantities.push({
+      key: "perimeter",
+      label: "Perimeter",
+      value: `${formatMeasurement(perimeter, decimalPlaces)} m`,
+    });
+  }
+
+  const area =
+    readNumber(record, "areaSquareMeters") ??
+    readNumber(measurements, "areaSquareMeters") ??
+    readNumber(selectedCandidate, "areaSquareMeters");
+  if (area !== undefined) {
+    quantities.push({
+      key: "area",
+      label: "Area",
+      value: `${formatMeasurement(area, decimalPlaces)} m2`,
+    });
+  }
+
+  const candidateCount =
+    readNumber(record, "candidateCount") ?? readArray(record, "candidates")?.length;
+  if (candidateCount !== undefined) {
+    quantities.push({
+      key: "candidateCount",
+      label: "Footprints found",
+      value: String(candidateCount),
+    });
+  }
+
+  const selectedIndex = readNumber(record, "selectedIndex");
+  if (selectedIndex !== undefined) {
+    quantities.push({
+      key: "selectedIndex",
+      label: "Selected footprint",
+      value: `#${selectedIndex + 1}`,
     });
   }
 

@@ -12,7 +12,8 @@
 // 4.7) and delegates the pure, deterministic OSM -> GeoJSON conversion to
 // `lib/osm/osmToGeoJSON.ts` (task 7.2). The conversion runs here so the route
 // returns ready-to-render GeoJSON building polygons (Req 4.1, 4.2), matching
-// the `fetchBuildings(): Promise<GeoJsonPolygon[]>` service contract.
+// the `fetchBuildings(): Promise<GeoJsonPolygon[]>` service contract. Raw OSM
+// elements are available only with `?debug=1` to keep production payloads small.
 //
 // Client fallback contract: rather than throwing, the route surfaces explicit
 // signals so the client can fall back to manual perimeter drawing while
@@ -38,6 +39,7 @@ import type { GeoJsonPolygon } from '@/lib/types';
  */
 const DEFAULT_OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
+  'https://overpass.openstreetmap.fr/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass.openstreetmap.ru/api/interpreter',
@@ -136,6 +138,9 @@ export async function GET(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const lat = parseCoordinate(searchParams.get('lat'), -90, 90);
   const lon = parseCoordinate(searchParams.get('lon'), -180, 180);
+  const includeElements =
+    searchParams.get('debug') === '1' ||
+    searchParams.get('includeElements') === 'true';
 
   // Malformed client request: missing or out-of-range coordinates. This is a
   // caller error rather than a fallback scenario, so respond with 400.
@@ -243,7 +248,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     return NextResponse.json(
       {
         buildings,
-        elements: buildingElements,
+        ...(includeElements ? { elements: buildingElements } : {}),
         empty: false,
         lat,
         lon,

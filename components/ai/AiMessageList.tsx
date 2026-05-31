@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 
 import type { ChatMessage } from "@/lib/types";
 import type { AiToolResult } from "@/app/api/ai/chat/route";
@@ -44,6 +45,121 @@ function roleLabel(role: ChatMessage["role"]): string {
     default:
       return "System";
   }
+}
+
+type MessageBlock =
+  | { type: "paragraph"; lines: string[] }
+  | { type: "ordered"; items: string[] }
+  | { type: "unordered"; items: string[] };
+
+function parseMessageBlocks(content: string): MessageBlock[] {
+  const blocks: MessageBlock[] = [];
+  let paragraph: string[] = [];
+  let list: Extract<MessageBlock, { type: "ordered" | "unordered" }> | null =
+    null;
+
+  const flushParagraph = () => {
+    if (paragraph.length > 0) {
+      blocks.push({ type: "paragraph", lines: paragraph });
+      paragraph = [];
+    }
+  };
+
+  const flushList = () => {
+    if (list) {
+      blocks.push(list);
+      list = null;
+    }
+  };
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    const ordered = line.match(/^\s*\d+\.\s+(.+)$/);
+    const unordered = line.match(/^\s*[-*]\s+(.+)$/);
+
+    if (line.trim().length === 0) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    if (ordered) {
+      flushParagraph();
+      if (!list || list.type !== "ordered") {
+        flushList();
+        list = { type: "ordered", items: [] };
+      }
+      list.items.push(ordered[1]);
+      continue;
+    }
+
+    if (unordered) {
+      flushParagraph();
+      if (!list || list.type !== "unordered") {
+        flushList();
+        list = { type: "unordered", items: [] };
+      }
+      list.items.push(unordered[1]);
+      continue;
+    }
+
+    flushList();
+    paragraph.push(line);
+  }
+
+  flushParagraph();
+  flushList();
+  return blocks;
+}
+
+function renderInlineMarkdown(text: string): ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+}
+
+function MarkdownMessage({ content }: { content: string }) {
+  const blocks = parseMessageBlocks(content);
+  if (blocks.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2">
+      {blocks.map((block, blockIndex) => {
+        if (block.type === "paragraph") {
+          return (
+            <p key={blockIndex} className="leading-relaxed">
+              {block.lines.map((line, lineIndex) => (
+                <span key={lineIndex}>
+                  {lineIndex > 0 ? <br /> : null}
+                  {renderInlineMarkdown(line)}
+                </span>
+              ))}
+            </p>
+          );
+        }
+
+        const ListTag = block.type === "ordered" ? "ol" : "ul";
+        return (
+          <ListTag
+            key={blockIndex}
+            className={cn(
+              "space-y-1 pl-5 leading-relaxed",
+              block.type === "ordered" ? "list-decimal" : "list-disc",
+            )}
+          >
+            {block.items.map((item, itemIndex) => (
+              <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
+            ))}
+          </ListTag>
+        );
+      })}
+    </div>
+  );
 }
 
 /**
@@ -108,13 +224,13 @@ export function AiMessageList({
               </span>
               <div
                 className={cn(
-                  "max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm",
+                  "max-w-[85%] break-words rounded-2xl px-3 py-2 text-sm",
                   isUser
                     ? "bg-blue-600 text-white"
                     : "bg-gray-100 text-gray-800",
                 )}
               >
-                {message.content}
+                <MarkdownMessage content={message.content} />
               </div>
             </li>
           );

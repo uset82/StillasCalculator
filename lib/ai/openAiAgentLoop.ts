@@ -68,6 +68,7 @@ export async function runOpenAiAgentWithTools(
   messages: ChatMessage[],
   sessionId: string,
   signal: AbortSignal,
+  requireToolCall = false,
   model = process.env.OPENAI_MODEL?.trim() || DEFAULT_MODEL,
 ): Promise<OpenAiAgentResult> {
   const planContext = createControllerPlanContext(scaffoldPlanController, sessionId);
@@ -79,7 +80,13 @@ export async function runOpenAiAgentWithTools(
   let structuredOutput: unknown;
 
   let response = await client.responses.create(
-    { model, instructions, tools, input },
+    {
+      model,
+      instructions,
+      tools,
+      input,
+      tool_choice: requireToolCall ? 'required' : 'auto',
+    },
     { signal, maxRetries: 0 },
   );
 

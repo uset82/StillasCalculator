@@ -161,9 +161,34 @@ export async function POST(request: Request): Promise<NextResponse<AiChatRespons
       messages,
       sessionId,
       abortController.signal,
+      requiresTools,
     );
 
-    if (requiresTools && result.toolResults.length === 0) {
+    let finalResult = result;
+    if (requiresTools && result.toolResults.length === 0 && latestUser) {
+      const retryMessages: ChatMessage[] = [
+        ...messages,
+        {
+          id: `retry-${Date.now()}`,
+          role: 'user',
+          content:
+            'You must call the deterministic Stillas app tools before answering. ' +
+            'For a selected house/address perimeter, use setBuildingPerimeterFromLocation. ' +
+            'For scaffold math, use getScaffoldPlan and calculateScaffoldMaterials. ' +
+            'Do not answer with invented numbers.',
+          timestamp: Date.now(),
+        },
+      ];
+      finalResult = await runOpenAiAgentWithTools(
+        client,
+        retryMessages,
+        sessionId,
+        abortController.signal,
+        true,
+      );
+    }
+
+    if (requiresTools && finalResult.toolResults.length === 0) {
       return NextResponse.json({
         error: 'The assistant must use app tools for this request but no tool calls were executed.',
         toolResults: [],
@@ -171,11 +196,11 @@ export async function POST(request: Request): Promise<NextResponse<AiChatRespons
     }
 
     return NextResponse.json({
-      reply: result.reply,
-      toolResults: result.toolResults,
+      reply: finalResult.reply,
+      toolResults: finalResult.toolResults,
       scaffoldPlan: scaffoldPlanController.getScaffoldPlan(),
-      ...(result.structuredOutput !== undefined
-        ? { structuredOutput: result.structuredOutput }
+      ...(finalResult.structuredOutput !== undefined
+        ? { structuredOutput: finalResult.structuredOutput }
         : {}),
     });
   } catch (error) {

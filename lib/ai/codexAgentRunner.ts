@@ -217,8 +217,13 @@ export async function runCodexAgentWithTools(
 
 /** Detects user messages that require tool execution. */
 export function messageRequiresTools(content: string): boolean {
-  return /\b((?:re)?calculat(?:e|es|ed|ing|ion|ions)?|draw(?:s|ing|n)?|export(?:s|ed|ing)?|cad|scaffold(?:s|ing)?|material(?:s)?|facade(?:s)?|perimeter(?:s)?|estimate(?:s|d|ing)?|boms?|report(?:s|ing)?)\b/i.test(
-    content,
+  const normalized = content
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  return /\b((?:re)?calcul\w*|math|measure\w*|drawing?|draw\w*|export\w*|cad|scaffold\w*|stillas\w*|material\w*|facade\w*|fasade\w*|perimeter\w*|perimetr\w*|omkrets\w*|estimate\w*|estimaci\w*|boms?|report\w*|informe\w*|andami\w*|fachad\w*|medici\w*|medid\w*|matematic\w*|dibuj\w*|tegning\w*|tegn\w*|beregn\w*|house|casa|building\w*|edificio\w*|footprint\w*|huella\w*|address\w*|direccion\w*|adresse\w*|length|lengde\w*|area|areal\w*)\b/.test(
+    normalized,
   );
 }
 

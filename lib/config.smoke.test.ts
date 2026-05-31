@@ -201,6 +201,7 @@ describe('AI tool registration (Req 13.2)', () => {
     'getAvailableScaffoldSystems',
     'updateWorkingHeight',
     'setBuildingPerimeter',
+    'setBuildingPerimeterFromLocation',
     'selectFacadeSides',
     'setScaffoldSystem',
     'setScaffoldDimensions',

@@ -432,4 +432,67 @@ describe("AiChatPanel engine-computed tool-result rendering (Req 13.1)", () => {
     expect(basePlate).toHaveTextContent("Base plate");
     expect(basePlate).toHaveTextContent("8 pcs");
   });
+
+  it("shows footprint measurements returned by the perimeter-from-location tool", () => {
+    render(
+      <AiChatPanel
+        messages={SAMPLE_MESSAGES}
+        toolResults={[
+          {
+            tool: "setBuildingPerimeterFromLocation",
+            ok: true,
+            data: {
+              candidateCount: 3,
+              selectedIndex: 0,
+              selectedCandidate: {
+                perimeterMeters: 54.13,
+                areaSquareMeters: 170.29,
+              },
+              scaffoldLengthMeters: 54.13,
+            },
+          },
+        ]}
+        onSendMessage={vi.fn()}
+        decimalPlaces={DECIMAL_PLACES}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("ai-calculation-card-setBuildingPerimeterFromLocation"),
+    ).toHaveTextContent("Selected house perimeter");
+    expect(screen.getByTestId("ai-quantity-perimeter")).toHaveTextContent(
+      "54.13 m",
+    );
+    expect(screen.getByTestId("ai-quantity-area")).toHaveTextContent(
+      "170.29 m2",
+    );
+    expect(screen.getByTestId("ai-quantity-candidateCount")).toHaveTextContent(
+      "3",
+    );
+  });
+});
+
+describe("AiChatPanel assistant message formatting", () => {
+  it("renders assistant markdown lists and bold text without exposing raw markers", () => {
+    render(
+      <AiChatPanel
+        messages={[
+          {
+            id: "m-md",
+            role: "assistant",
+            content:
+              "I found options:\n\n1. **Main perimeter:**\n- Perimeter: 54.13 m\n- Area: 170.29 m2",
+            timestamp: 1,
+          },
+        ]}
+        onSendMessage={vi.fn()}
+      />,
+    );
+
+    const message = screen.getByTestId("ai-message-m-md");
+    expect(within(message).getAllByRole("list")).toHaveLength(2);
+    expect(within(message).getByText("Main perimeter:")).toBeInTheDocument();
+    expect(message).toHaveTextContent("Perimeter: 54.13 m");
+    expect(message).not.toHaveTextContent("**Main perimeter:**");
+  });
 });

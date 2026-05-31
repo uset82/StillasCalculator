@@ -80,6 +80,9 @@ export interface RetrieveFootprintsData {
 /** Failure reasons, mirroring the underlying services' fallback signals. */
 export type FootprintRetrievalError = 'address-not-found' | 'overpass-failed';
 
+/** Deterministic footprint auto-selection strategy used by app tools. */
+export type FootprintSelectionStrategy = 'nearest' | 'largest';
+
 /**
  * Discriminated outcome of {@link retrieveBuildingFootprints}. Failures carry
  * `offerManual: true` so the caller/model knows to offer manual drawing while
@@ -231,6 +234,54 @@ function toCandidate(
     perimeterMeters: measurements.perimeterMeters,
     areaSquareMeters: measurements.areaSquareMeters,
   };
+}
+
+function squaredCentroidDistance(
+  candidate: FootprintCandidate,
+  coordinate: { lat: number; lon: number },
+): number {
+  const ring = candidate.polygon.coordinates[0] ?? [];
+  if (ring.length === 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const vertices = ring.slice(0, -1).length > 0 ? ring.slice(0, -1) : ring;
+  let sumLon = 0;
+  let sumLat = 0;
+  for (const [lon, lat] of vertices) {
+    sumLon += lon;
+    sumLat += lat;
+  }
+
+  const centroidLon = sumLon / vertices.length;
+  const centroidLat = sumLat / vertices.length;
+  const dLon = centroidLon - coordinate.lon;
+  const dLat = centroidLat - coordinate.lat;
+  return dLon * dLon + dLat * dLat;
+}
+
+/** Selects a footprint candidate deterministically, without model arithmetic. */
+export function pickFootprintCandidate(
+  candidates: readonly FootprintCandidate[],
+  coordinate: { lat: number; lon: number },
+  strategy: FootprintSelectionStrategy = 'nearest',
+): FootprintCandidate | null {
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  if (strategy === 'largest') {
+    return candidates.reduce((best, candidate) =>
+      candidate.areaSquareMeters > best.areaSquareMeters ? candidate : best,
+    );
+  }
+
+  return candidates.reduce((best, candidate) =>
+    squaredCentroidDistance(candidate, coordinate) <
+    squaredCentroidDistance(best, coordinate)
+      ? candidate
+      : best,
+  );
 }
 
 // ---------------------------------------------------------------------------

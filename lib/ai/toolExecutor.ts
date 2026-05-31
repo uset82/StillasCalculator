@@ -38,13 +38,16 @@ import {
   RETRIEVE_BUILDING_FOOTPRINTS_PARAMS,
   SELECT_FACADE_SIDES_PARAMS,
   SET_BUILDING_PERIMETER_PARAMS,
+  SET_BUILDING_PERIMETER_FROM_LOCATION_PARAMS,
   SET_SCAFFOLD_DIMENSIONS_PARAMS,
   SET_SCAFFOLD_SYSTEM_PARAMS,
   UPDATE_WORKING_HEIGHT_PARAMS,
 } from '@/lib/ai/schemas';
 import {
+  pickFootprintCandidate,
   retrieveBuildingFootprints,
   type RetrieveFootprintsArgs,
+  type FootprintSelectionStrategy,
 } from '@/lib/ai/buildingFootprints';
 
 export type ToolName =
@@ -56,6 +59,7 @@ export type ToolName =
   | 'generateReportSummary'
   | 'getScaffoldPlan'
   | 'setBuildingPerimeter'
+  | 'setBuildingPerimeterFromLocation'
   | 'selectFacadeSides'
   | 'setScaffoldSystem'
   | 'setScaffoldDimensions'
@@ -133,6 +137,12 @@ export const AI_TOOLS: readonly ToolDefinition[] = Object.freeze([
     parameters: SET_BUILDING_PERIMETER_PARAMS,
   },
   {
+    name: 'setBuildingPerimeterFromLocation',
+    description:
+      'Resolve an address or coordinate to nearby building footprints, deterministically choose the nearest or largest candidate, and store that footprint as the app perimeter through the same validated geometry engine used by setBuildingPerimeter.',
+    parameters: SET_BUILDING_PERIMETER_FROM_LOCATION_PARAMS,
+  },
+  {
     name: 'selectFacadeSides',
     description:
       'Select which facade sides receive scaffold. Pass null for whole perimeter, or an array of side indices.',
@@ -183,7 +193,7 @@ export const AI_TOOLS: readonly ToolDefinition[] = Object.freeze([
   {
     name: 'retrieveBuildingFootprints',
     description:
-      'Resolve an address (or coordinate) to candidate building footprints within 60 m, server-side, via the geocoding and Overpass services. Returns candidates for the user to confirm; does not store a perimeter. Commit a chosen candidate with setBuildingPerimeter.',
+      'Resolve an address (or coordinate) to candidate building footprints within 60 m, server-side, via the geocoding and Overpass services. Returns candidates for inspection; does not store a perimeter. To draw a selected house immediately, prefer setBuildingPerimeterFromLocation.',
     parameters: RETRIEVE_BUILDING_FOOTPRINTS_PARAMS,
   },
 ] as const);
@@ -290,9 +300,15 @@ export function createToolDispatch(
               measurements: context.getScaffoldPlan().measurements,
               scaffoldLengthMeters: context.getScaffoldPlan().scaffoldLengthMeters,
             },
-          }
+        }
         : { ok: false, error: update.error?.message ?? 'Perimeter rejected.' };
     },
+
+    setBuildingPerimeterFromLocation: () => ({
+      ok: false,
+      error:
+        'Use executeTool() for setBuildingPerimeterFromLocation — it requires async I/O.',
+    }),
 
     selectFacadeSides: (args) => {
       const record = asRecord(args);
@@ -489,7 +505,61 @@ async function runRetrieveBuildingFootprints(args: unknown): Promise<ToolResult>
   return { ok: true, data: result.data };
 }
 
-/** Executes a tool; handles the async tools (exportCadFormat, retrieveBuildingFootprints). */
+function readFootprintSelectionStrategy(value: unknown): FootprintSelectionStrategy {
+  return value === 'largest' ? 'largest' : 'nearest';
+}
+
+async function runSetBuildingPerimeterFromLocation(
+  context: PlanToolContext,
+  args: unknown,
+): Promise<ToolResult> {
+  const record = asRecord(args);
+  const selectionStrategy = readFootprintSelectionStrategy(record.selectionStrategy);
+  const result = await retrieveBuildingFootprints(record as RetrieveFootprintsArgs);
+  if (!result.ok) {
+    const message =
+      FOOTPRINT_ERROR_MESSAGES[result.error] ?? `Footprint retrieval failed: ${result.error}.`;
+    return { ok: false, error: message };
+  }
+
+  const selected = pickFootprintCandidate(
+    result.data.candidates,
+    result.data.coordinate,
+    selectionStrategy,
+  );
+  if (!selected) {
+    return {
+      ok: false,
+      error:
+        'No usable building footprint was found near that location. Draw the perimeter manually or provide a more specific address.',
+    };
+  }
+
+  const update = context.setPerimeter(selected.polygon);
+  if (!update.ok) {
+    return { ok: false, error: update.error?.message ?? 'Perimeter rejected.' };
+  }
+
+  const plan = context.getScaffoldPlan();
+  return {
+    ok: true,
+    data: {
+      coordinate: result.data.coordinate,
+      candidateCount: result.data.candidates.length,
+      selectedIndex: selected.index,
+      selectionStrategy,
+      selectedCandidate: {
+        index: selected.index,
+        perimeterMeters: selected.perimeterMeters,
+        areaSquareMeters: selected.areaSquareMeters,
+      },
+      measurements: plan.measurements,
+      scaffoldLengthMeters: plan.scaffoldLengthMeters,
+    },
+  };
+}
+
+/** Executes a tool; handles async tools that need filesystem or network I/O. */
 export async function executeTool(
   dispatch: Record<ToolName, ToolExecutorFn>,
   context: PlanToolContext,
@@ -501,6 +571,9 @@ export async function executeTool(
   }
   if (name === 'retrieveBuildingFootprints') {
     return runRetrieveBuildingFootprints(args);
+  }
+  if (name === 'setBuildingPerimeterFromLocation') {
+    return runSetBuildingPerimeterFromLocation(context, args);
   }
   // Resolve the executor as an OWN property only. `dispatch` is a plain object
   // literal, so a bare `dispatch[name]` lookup walks the prototype chain — an

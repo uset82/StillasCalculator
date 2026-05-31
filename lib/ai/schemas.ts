@@ -227,6 +227,33 @@ export const SET_BUILDING_PERIMETER_PARAMS: JsonSchema = {
   additionalProperties: false,
 };
 
+export const SET_BUILDING_PERIMETER_FROM_LOCATION_PARAMS: JsonSchema = {
+  type: 'object',
+  properties: {
+    address: {
+      type: ['string', 'null'],
+      description:
+        'Free-text address to geocode. Null if a coordinate is supplied.',
+    },
+    lat: {
+      type: ['number', 'null'],
+      description: 'Latitude (-90..90). Null if an address is supplied.',
+    },
+    lon: {
+      type: ['number', 'null'],
+      description: 'Longitude (-180..180). Null if an address is supplied.',
+    },
+    selectionStrategy: {
+      type: 'string',
+      enum: ['nearest', 'largest'],
+      description:
+        'Use nearest for a selected/searched house; use largest only when the user asks for the main/largest footprint.',
+    },
+  },
+  required: ['address', 'lat', 'lon', 'selectionStrategy'],
+  additionalProperties: false,
+};
+
 export const SELECT_FACADE_SIDES_PARAMS: JsonSchema = {
   type: 'object',
   properties: {

@@ -123,6 +123,9 @@ describe('messageRequiresTools', () => {
     'Exporting CAD would help.',
     'Select these facades.',
     'How many BOMs can you generate?',
+    'Calcula el perímetro y los materiales de andamio.',
+    'Dibuja la casa seleccionada y calcula el área.',
+    'Beregn stillas for valgt hus og tegn omkretsen.',
   ])('detects tool-required wording: %s', (content) => {
     expect(messageRequiresTools(content)).toBe(true);
   });
