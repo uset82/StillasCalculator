@@ -4,6 +4,7 @@ import {
   RESOURCE_MIME_TYPE,
 } from '@modelcontextprotocol/ext-apps/server';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod/v4';
 
 import { calculateScaffoldMaterials } from '@/lib/scaffold/scaffoldCalculator';
@@ -15,6 +16,13 @@ import { VERIFICATION_DISCLAIMER, type MaterialItem, type ScaffoldSystemId } fro
 
 const APP_BASE_URL = 'https://stillascalculator.netlify.app';
 const WIDGET_URI = 'ui://stillas/estimate-widget-v1.html';
+const NO_AUTH_SECURITY_SCHEMES = [{ type: 'noauth' }] as const;
+const READ_ONLY_TOOL_ANNOTATIONS = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+} as const;
 
 const scaffoldSystemIdSchema = z.enum([
   'generic-frame',
@@ -159,6 +167,86 @@ interface NormalizedCalculationInput {
 type EstimateBuildResult =
   | { ok: true; output: EstimateOutput }
   | { ok: false; error: string };
+
+interface StillasToolDescriptor {
+  name: string;
+  title: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  outputSchema: Record<string, unknown>;
+  annotations: typeof READ_ONLY_TOOL_ANNOTATIONS;
+  securitySchemes: typeof NO_AUTH_SECURITY_SCHEMES;
+  _meta: Record<string, unknown>;
+}
+
+function jsonSchemaFromShape(shape: z.ZodRawShape): Record<string, unknown> {
+  return z.toJSONSchema(z.object(shape), { target: 'draft-7' }) as Record<
+    string,
+    unknown
+  >;
+}
+
+function noAuthMeta(meta: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...meta,
+    securitySchemes: NO_AUTH_SECURITY_SCHEMES,
+  };
+}
+
+function appToolMeta(invoking: string, invoked: string): Record<string, unknown> {
+  return noAuthMeta({
+    ui: { resourceUri: WIDGET_URI },
+    'openai/outputTemplate': WIDGET_URI,
+    'openai/toolInvocation/invoking': invoking,
+    'openai/toolInvocation/invoked': invoked,
+  });
+}
+
+export function buildStillasToolDescriptors(): StillasToolDescriptor[] {
+  const systemsOutputSchemaJson = jsonSchemaFromShape(systemsOutputShape);
+  const estimateOutputSchemaJson = jsonSchemaFromShape(estimateOutputShape);
+  return [
+    {
+      name: 'list_scaffold_systems',
+      title: 'List scaffold systems',
+      description:
+        'List scaffold systems and default bay, lift, and width dimensions available in StillasCalculator.',
+      inputSchema: jsonSchemaFromShape({}),
+      outputSchema: systemsOutputSchemaJson,
+      annotations: READ_ONLY_TOOL_ANNOTATIONS,
+      securitySchemes: NO_AUTH_SECURITY_SCHEMES,
+      _meta: appToolMeta('Loading scaffold systems', 'Scaffold systems loaded'),
+    },
+    {
+      name: 'estimate_scaffold_materials',
+      title: 'Estimate scaffold materials',
+      description:
+        'Calculate scaffold bays, levels, and material quantities from an explicit scaffold length and working height.',
+      inputSchema: jsonSchemaFromShape(estimateFromLengthInputShape),
+      outputSchema: estimateOutputSchemaJson,
+      annotations: READ_ONLY_TOOL_ANNOTATIONS,
+      securitySchemes: NO_AUTH_SECURITY_SCHEMES,
+      _meta: appToolMeta('Calculating scaffold estimate', 'Scaffold estimate ready'),
+    },
+    {
+      name: 'estimate_scaffold_for_location',
+      title: 'Estimate scaffold for location',
+      description:
+        'Resolve an address or coordinate, select a nearby building footprint, then calculate scaffold material quantities.',
+      inputSchema: jsonSchemaFromShape(estimateFromLocationInputShape),
+      outputSchema: estimateOutputSchemaJson,
+      annotations: READ_ONLY_TOOL_ANNOTATIONS,
+      securitySchemes: NO_AUTH_SECURITY_SCHEMES,
+      _meta: appToolMeta('Finding building footprint', 'Location estimate ready'),
+    },
+  ];
+}
+
+function registerToolDescriptorHandler(server: McpServer): void {
+  server.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: buildStillasToolDescriptors(),
+  }));
+}
 
 function normalizeMaterialItems(items: readonly MaterialItem[]): EstimateOutput['estimate']['materialList'] {
   return items.map((item) => ({
@@ -600,12 +688,8 @@ export function createStillasChatGptAppServer(): McpServer {
       description: 'List scaffold systems and default bay, lift, and width dimensions available in StillasCalculator.',
       inputSchema: {},
       outputSchema: systemsOutputShape,
-      annotations: { readOnlyHint: true, idempotentHint: true },
-      _meta: {
-        ui: { resourceUri: WIDGET_URI },
-        'openai/toolInvocation/invoking': 'Loading scaffold systems',
-        'openai/toolInvocation/invoked': 'Scaffold systems loaded',
-      },
+      annotations: READ_ONLY_TOOL_ANNOTATIONS,
+      _meta: appToolMeta('Loading scaffold systems', 'Scaffold systems loaded'),
     },
     async () => {
       const output = buildSystemsOutput();
@@ -625,12 +709,8 @@ export function createStillasChatGptAppServer(): McpServer {
         'Calculate scaffold bays, levels, and material quantities from an explicit scaffold length and working height.',
       inputSchema: estimateFromLengthInputShape,
       outputSchema: estimateOutputShape,
-      annotations: { readOnlyHint: true, idempotentHint: true },
-      _meta: {
-        ui: { resourceUri: WIDGET_URI },
-        'openai/toolInvocation/invoking': 'Calculating scaffold estimate',
-        'openai/toolInvocation/invoked': 'Scaffold estimate ready',
-      },
+      annotations: READ_ONLY_TOOL_ANNOTATIONS,
+      _meta: appToolMeta('Calculating scaffold estimate', 'Scaffold estimate ready'),
     },
     async (args) => {
       const result = buildEstimateFromLengthInput(args);
@@ -653,12 +733,8 @@ export function createStillasChatGptAppServer(): McpServer {
         'Resolve an address or coordinate, select a nearby building footprint, then calculate scaffold material quantities.',
       inputSchema: estimateFromLocationInputShape,
       outputSchema: estimateOutputShape,
-      annotations: { readOnlyHint: true, idempotentHint: false },
-      _meta: {
-        ui: { resourceUri: WIDGET_URI },
-        'openai/toolInvocation/invoking': 'Finding building footprint',
-        'openai/toolInvocation/invoked': 'Location estimate ready',
-      },
+      annotations: READ_ONLY_TOOL_ANNOTATIONS,
+      _meta: appToolMeta('Finding building footprint', 'Location estimate ready'),
     },
     async (args) => {
       const result = await buildEstimateFromLocationInput(args);
@@ -671,6 +747,8 @@ export function createStillasChatGptAppServer(): McpServer {
       };
     },
   );
+
+  registerToolDescriptorHandler(server);
 
   return server;
 }

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildEstimateFromLengthInput } from '@/lib/ai/chatGptAppServer';
+import {
+  buildEstimateFromLengthInput,
+  buildStillasToolDescriptors,
+} from '@/lib/ai/chatGptAppServer';
 
 describe('ChatGPT app scaffold estimates', () => {
   it('builds a deterministic material estimate from an explicit scaffold length', () => {
@@ -22,5 +25,15 @@ describe('ChatGPT app scaffold estimates', () => {
     expect(result.output.estimate.numberOfLevels).toBeGreaterThan(0);
     expect(result.output.estimate.materialList.length).toBeGreaterThan(0);
     expect(result.output.estimate.disclaimer).toContain('professional verification');
+  });
+
+  it('advertises every ChatGPT tool as no-auth', () => {
+    const descriptors = buildStillasToolDescriptors();
+
+    expect(descriptors.length).toBeGreaterThan(0);
+    for (const descriptor of descriptors) {
+      expect(descriptor.securitySchemes).toEqual([{ type: 'noauth' }]);
+      expect(descriptor._meta.securitySchemes).toEqual([{ type: 'noauth' }]);
+    }
   });
 });
