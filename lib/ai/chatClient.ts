@@ -32,6 +32,7 @@ import {
   type AiAuthSignInResponse,
   type AiAuthStatusResponse,
 } from '@/lib/ai/authStatus';
+import { stripChatRoleTags } from '@/lib/ai/chatFormatting';
 import type {
   AiChatRequest,
   AiChatResponse,
@@ -220,7 +221,7 @@ export function normalizeChatResponse(
   // verbatim (Req 13.1, 13.6), plus any schema-validated structured output.
   return {
     status: 'ok',
-    reply: typeof body.reply === 'string' ? body.reply : '',
+    reply: typeof body.reply === 'string' ? stripChatRoleTags(body.reply) : '',
     toolResults: normalizeToolResults(body.toolResults),
     ...(body.structuredOutput !== undefined
       ? { structuredOutput: body.structuredOutput }

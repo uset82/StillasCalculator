@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import type { ChatMessage } from "@/lib/types";
 import type { AiToolResult } from "@/app/api/ai/chat/route";
 import { sortMessagesChronologically } from "@/lib/ai/chatClient";
+import { stripChatRoleTags } from "@/lib/ai/chatFormatting";
 import { AiCalculationCard } from "./AiCalculationCard";
 
 /**
@@ -122,7 +123,7 @@ function renderInlineMarkdown(text: string): ReactNode[] {
 }
 
 function MarkdownMessage({ content }: { content: string }) {
-  const blocks = parseMessageBlocks(content);
+  const blocks = parseMessageBlocks(stripChatRoleTags(content));
   if (blocks.length === 0) {
     return null;
   }
