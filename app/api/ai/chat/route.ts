@@ -17,6 +17,7 @@ import {
   getAiProviderPreference,
   getOpenRouterApiKey,
 } from '@/lib/server/aiAuth';
+import { tryBuildDeterministicScaffoldEstimate } from '@/lib/ai/deterministicScaffoldEstimate';
 import {
   getCodexBackendSessionCookie,
   getOpenAiAccountSessionState,
@@ -284,6 +285,35 @@ export async function POST(request: Request): Promise<NextResponse<AiChatRespons
 
   if (!openRouterApiKey) {
     return NextResponse.json({ unavailable: true });
+  }
+
+  const deterministicEstimate = await tryBuildDeterministicScaffoldEstimate(
+    latestUser,
+    body.projectState,
+    scaffoldPlanController,
+  );
+  if (deterministicEstimate) {
+    let structuredOutput: unknown;
+    try {
+      structuredOutput = buildStructuredOutputForToolResults(
+        deterministicEstimate.toolResults,
+      );
+    } catch (error) {
+      if (error instanceof StructuredOutputError) {
+        return NextResponse.json(
+          { error: 'The AI returned a result that did not match the required format.' },
+          { status: 502 },
+        );
+      }
+      throw error;
+    }
+
+    return NextResponse.json({
+      reply: deterministicEstimate.reply,
+      toolResults: deterministicEstimate.toolResults,
+      scaffoldPlan: deterministicEstimate.scaffoldPlan,
+      ...(structuredOutput !== undefined ? { structuredOutput } : {}),
+    });
   }
 
   return runOpenRouterBackedAgent(

@@ -670,4 +670,24 @@ describe("AiChatPanel assistant message formatting", () => {
     expect(message).toHaveTextContent("Perimeter: 54.13 m");
     expect(message).not.toHaveTextContent("**Main perimeter:**");
   });
+
+  it("hides model-emitted assistant role tags", () => {
+    render(
+      <AiChatPanel
+        messages={[
+          {
+            id: "m-tagged",
+            role: "assistant",
+            content: "Hello there\n</assistant>",
+            timestamp: 1,
+          },
+        ]}
+        onSendMessage={vi.fn()}
+      />,
+    );
+
+    const message = screen.getByTestId("ai-message-m-tagged");
+    expect(message).toHaveTextContent("Hello there");
+    expect(message).not.toHaveTextContent("</assistant>");
+  });
 });

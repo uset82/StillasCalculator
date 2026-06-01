@@ -24,11 +24,12 @@ import {
   buildStructuredOutput,
   StructuredOutputError,
 } from '@/lib/ai/structuredOutputGate';
+import { stripChatRoleTags } from '@/lib/ai/chatFormatting';
 import { getSystemPrompt } from '@/lib/ai/systemPrompt';
 import { scaffoldPlanController } from '@/lib/state/projectStateController';
 
 export const MAX_TOOL_ITERATIONS = 8;
-export const DEFAULT_OPENROUTER_MODEL = 'openrouter/free';
+export const DEFAULT_OPENROUTER_MODEL = 'poolside/laguna-xs.2:free';
 
 // The Structured Output conformance gate (`buildStructuredOutput`,
 // `StructuredOutputError`) lives in `lib/ai/structuredOutputGate.ts` so every
@@ -215,6 +216,8 @@ export async function runOpenRouterAgentWithTools(
       toolChoice: requireToolCall ? 'required' : 'auto',
       stopWhen: stepCountIs(MAX_TOOL_ITERATIONS),
       allowFinalResponse: true,
+      maxOutputTokens: requireToolCall ? 900 : 500,
+      reasoning: { enabled: false },
     },
     {
       signal,
@@ -224,7 +227,7 @@ export async function runOpenRouterAgentWithTools(
 
   const reply = await result.getText();
   return {
-    reply,
+    reply: stripChatRoleTags(reply),
     toolResults,
     ...(structuredOutput !== undefined ? { structuredOutput } : {}),
   };
