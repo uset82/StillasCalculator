@@ -287,6 +287,10 @@ export async function POST(request: Request): Promise<NextResponse<AiChatRespons
     return NextResponse.json({ unavailable: true });
   }
 
+  if (body.projectState) {
+    scaffoldPlanController.applyScaffoldPlan(body.projectState);
+  }
+
   const deterministicEstimate = await tryBuildDeterministicScaffoldEstimate(
     latestUser,
     body.projectState,
