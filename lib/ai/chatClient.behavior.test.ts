@@ -11,12 +11,12 @@
 //     caller can keep Project_State untouched (Req 12.8).
 //   * normalizeChatResponse maps a successful body to status 'ok' with the
 //     assistant reply and the deterministic tool results (Req 12.2 — the
-//     OpenAI call path's response, mocked here at the transport boundary).
+//     OpenRouter call path's response, mocked here at the transport boundary).
 //   * sendChatRequest rejects an over-length (>2000 char) message client-side
 //     WITHOUT issuing a fetch, the local send-gate that backs the in-flight
 //     send disabling (Req 12.3 support) and the 2000-char bound (Req 12.1).
 //   * sendChatRequest posts the conversation to the chat endpoint and returns a
-//     normalized 'ok' outcome for a mocked OpenAI-backed response (Req 12.2),
+//     normalized 'ok' outcome for a mocked OpenRouter-backed response (Req 12.2),
 //     and returns an 'error' outcome (state preserved) when the transport
 //     throws (Req 12.8).
 //
@@ -142,7 +142,7 @@ describe('normalizeChatResponse: failure and timeout preserve state (Req 12.8)',
 // normalizeChatResponse — success (Req 12.2)
 // ---------------------------------------------------------------------------
 
-describe('normalizeChatResponse: successful OpenAI-backed response (Req 12.2)', () => {
+describe('normalizeChatResponse: successful OpenRouter-backed response (Req 12.2)', () => {
   it('maps a successful body to status "ok" with reply, tool results, and structured output', () => {
     const body: AiChatResponse = {
       reply: 'Here is your scaffold estimate.',
@@ -215,7 +215,7 @@ describe('sendChatRequest: over-length message is rejected without a fetch (Req 
 });
 
 // ---------------------------------------------------------------------------
-// sendChatRequest — OpenAI call path with a mocked response (Req 12.2, 12.8)
+// sendChatRequest — OpenRouter call path with a mocked response (Req 12.2, 12.8)
 // ---------------------------------------------------------------------------
 
 describe('sendChatRequest: posts to the chat endpoint and normalizes the response (Req 12.2, 12.8)', () => {
@@ -262,6 +262,7 @@ describe('fetchAiAuthStatus: reads the server-side AI connection state', () => {
       providerPreference: 'codex-cli',
       activeProvider: 'codex-cli',
       canUseAssistant: true,
+      openRouterApiKeyConfigured: false,
       openAiApiKeyConfigured: false,
       codexCli: { loggedIn: true, method: 'chatgpt' },
       openAiAccountSession: {

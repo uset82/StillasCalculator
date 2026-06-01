@@ -4,6 +4,7 @@ import type { AiAuthSignInResponse } from '@/lib/ai/authStatus';
 import { startCodexBackendSignIn } from '@/lib/ai/codexBackendClient';
 import { startCodexChatGptSignIn } from '@/lib/ai/codexSdkAdapter';
 import { getAiProviderPreference } from '@/lib/server/aiAuth';
+import { findAuthenticatedLocalCodexBackendSession } from '@/lib/server/localCodexBackendSessionRecovery';
 import {
   clearCodexBackendSessionCookie,
   clearOpenAiAccountDeviceCookie,
@@ -27,21 +28,31 @@ export async function POST(
   const now = Date.now();
   const providerPreference = getAiProviderPreference();
 
-  if (providerPreference === 'off' || providerPreference === 'openai-api') {
+  if (
+    providerPreference === 'off' ||
+    providerPreference === 'openai-api' ||
+    providerPreference === 'openrouter-api'
+  ) {
     return NextResponse.json(
       {
         ok: false,
         message:
-          'OpenAI account sign-in is disabled while this deployment is configured for the API provider.',
-        error: 'OpenAI account sign-in is disabled for this provider.',
+          'Account sign-in is disabled while this deployment is configured for the OpenRouter API provider.',
+        error: 'Account sign-in is disabled for this provider.',
       },
       { status: 409 },
     );
   }
 
   if (providerPreference === 'openai-account') {
+    const existingBackendSession = getCodexBackendSessionCookie(request, now);
+    const recoveredBackendSession =
+      existingBackendSession.data?.sessionId === undefined
+        ? await findAuthenticatedLocalCodexBackendSession()
+        : null;
     const backendSession =
-      getCodexBackendSessionCookie(request, now).data?.sessionId ??
+      existingBackendSession.data?.sessionId ??
+      recoveredBackendSession ??
       newCodexBackendSessionId();
     const result = await startCodexBackendSignIn(backendSession);
 

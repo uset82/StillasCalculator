@@ -3,6 +3,8 @@ import { mkdir } from 'node:fs/promises';
 import { createInterface, type Interface as ReadlineInterface } from 'node:readline';
 
 const DEVICE_AUTH_EXPIRES_MS = 15 * 60_000;
+const DEVICE_AUTH_RATE_LIMIT_MESSAGE =
+  'ChatGPT sign-in is temporarily rate-limited after too many device-code attempts. Wait a few minutes, then start sign-in once and use the code already shown in the app.';
 
 export interface CodexAccountState {
   authenticated: boolean;
@@ -68,6 +70,16 @@ export function isDeviceCodeSettingsError(error: string): boolean {
   );
 }
 
+export function isDeviceAuthRateLimitError(error: string): boolean {
+  return /429|too many requests|rate[-\s]*limit/i.test(error);
+}
+
+function normalizeLoginError(error: string): string {
+  return isDeviceAuthRateLimitError(error)
+    ? DEVICE_AUTH_RATE_LIMIT_MESSAGE
+    : error;
+}
+
 export function parseAccountReadResult(payload: unknown): CodexAccountState {
   const record = asRecord(payload);
   const account = asRecord(record?.account);
@@ -113,14 +125,16 @@ export function applyAccountNotification(
   const params = asRecord(record?.params);
   if (method === 'account/login/completed') {
     const success = params?.success === true;
+    const rawError =
+      stringOrNull(params?.error) ?? 'ChatGPT sign-in did not complete.';
     const error = success
       ? null
-      : stringOrNull(params?.error) ?? 'ChatGPT sign-in did not complete.';
+      : normalizeLoginError(rawError);
     return {
       ...current,
       pending: false,
       error,
-      deviceCodeRequired: error ? isDeviceCodeSettingsError(error) : false,
+      deviceCodeRequired: !success && isDeviceCodeSettingsError(rawError),
     };
   }
   if (method === 'account/updated') {
@@ -189,8 +203,27 @@ export class CodexAppServerClient {
     this.child = null;
     this.initialized = false;
     if (child && !child.killed) {
-      child.kill();
+      await this.killChildProcess(child);
     }
+  }
+
+  private killChildProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
+    if (process.platform !== 'win32' || child.pid === undefined) {
+      child.kill();
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      const killer = spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      killer.on('error', () => {
+        child.kill();
+        resolve();
+      });
+      killer.on('close', () => resolve());
+    });
   }
 
   private async ensureStarted(): Promise<void> {

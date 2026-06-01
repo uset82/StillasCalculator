@@ -9,7 +9,7 @@
 // `POST /api/ai/chat` handler so the actual deadline wiring is exercised:
 //
 //   - Req 10.1: every AI request is bounded by the Request_Deadline (45 s),
-//     applied with the same configured value for the OpenAI_Provider
+//     applied with the same configured value for the OpenRouter_Provider
 //     (`REQUEST_TIMEOUT_MS`) and the Codex_Provider
 //     (`DEFAULT_CODEX_TIMEOUT_MS` / `STILLAS_CODEX_TIMEOUT_MS`).
 //   - Req 10.2: a provider error / network failure / unhandled exception
@@ -20,8 +20,8 @@
 //     applies NO Project_State change after the deadline.
 //
 // Strategy:
-//   * OpenAI path — the route's own 45 s `setTimeout` + `AbortController` are
-//     exercised with FAKE timers; `runOpenAiAgentWithTools` is mocked to hang
+//   * OpenRouter path — the route's own 45 s `setTimeout` + `AbortController` are
+//     exercised with FAKE timers; `runOpenRouterAgentWithTools` is mocked to hang
 //     until its abort signal fires. We assert the request is still pending at
 //     44 999 ms and only times out at exactly 45 000 ms (the bound is the
 //     configured deadline, Req 10.1), maps to 504 / `timedOut: true`, and
@@ -30,11 +30,11 @@
 //     Codex SDK whose streamed turn never completes, with a short
 //     `STILLAS_CODEX_TIMEOUT_MS` so the runner's own abort deadline fires; the
 //     route maps the result to 504 / `timedOut: true` and preserves state.
-//   * Provider error — `runOpenAiAgentWithTools` rejects with a non-abort
+//   * Provider error — `runOpenRouterAgentWithTools` rejects with a non-abort
 //     error; the route maps it to 502 (no `timedOut`) and preserves state
 //     (Req 10.2).
 //
-// No real OpenAI/Codex provider, network, or MCP process is ever contacted.
+// No real OpenRouter/Codex provider, network, or MCP process is ever contacted.
 
 import {
   afterEach,
@@ -46,19 +46,12 @@ import {
   type Mock,
 } from 'vitest';
 
-// --- Mock the OpenAI SDK so `new OpenAI(...)` never touches credentials/network.
-vi.mock('openai', () => ({
-  default: class MockOpenAI {
-    constructor(_options?: unknown) {}
-  },
-}));
-
-// --- Mock the OpenAI agent loop: keep `newAiSessionId`/`StructuredOutputError`
+// --- Mock the OpenRouter agent loop: keep `newAiSessionId`/`StructuredOutputError`
 //     real (the route imports them) and replace only the provider call so we
 //     can make it hang (timeout) or reject (error) on demand.
-vi.mock('@/lib/ai/openAiAgentLoop', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/ai/openAiAgentLoop')>();
-  return { ...actual, runOpenAiAgentWithTools: vi.fn() };
+vi.mock('@/lib/ai/openRouterAgentLoop', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/ai/openRouterAgentLoop')>();
+  return { ...actual, runOpenRouterAgentWithTools: vi.fn() };
 });
 
 // --- Mock Codex CLI auth so the REAL runner believes a ChatGPT login exists.
@@ -107,7 +100,7 @@ vi.mock('@openai/codex-sdk', () => {
 });
 
 import { POST } from './route';
-import { runOpenAiAgentWithTools } from '@/lib/ai/openAiAgentLoop';
+import { runOpenRouterAgentWithTools } from '@/lib/ai/openRouterAgentLoop';
 import { scaffoldPlanController } from '@/lib/state/projectStateController';
 import { createScaffoldPlan } from '@/lib/scaffold/scaffoldPlan';
 import {
@@ -116,10 +109,10 @@ import {
 } from '@/lib/server/aiUserSession';
 import type { ScaffoldPlan } from '@/lib/types';
 
-// The route's configured Request_Deadline for the OpenAI path (Req 10.1).
+// The route's configured Request_Deadline for the OpenRouter path (Req 10.1).
 const REQUEST_TIMEOUT_MS = 45_000;
 
-const mockRunOpenAi = runOpenAiAgentWithTools as unknown as Mock;
+const mockRunOpenRouter = runOpenRouterAgentWithTools as unknown as Mock;
 
 /** A never-default Project_State used to prove nothing mutates on failure. */
 function knownPlan(): ScaffoldPlan {
@@ -166,17 +159,17 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// OpenAI path — deadline bound + timeout outcome + state preservation
+// OpenRouter path — deadline bound + timeout outcome + state preservation
 // (Req 10.1, 10.3)
 // ---------------------------------------------------------------------------
 
-describe('POST /api/ai/chat — OpenAI request deadline (Property K, Req 10.1, 10.3)', () => {
+describe('POST /api/ai/chat — OpenRouter request deadline (Property K, Req 10.1, 10.3)', () => {
   it('stays pending until exactly the 45 s deadline, then returns a timeout and preserves state', async () => {
     vi.stubEnv('STILLAS_AI_PROVIDER', 'auto');
-    vi.stubEnv('OPENAI_API_KEY', 'test-key');
+    vi.stubEnv('OPENROUTER_API_KEY', 'test-key');
 
     // The provider call hangs until its abort signal fires (a stuck model).
-    mockRunOpenAi.mockImplementation(
+    mockRunOpenRouter.mockImplementation(
       (_client: unknown, _messages: unknown, _sessionId: unknown, signal: AbortSignal) =>
         new Promise((_resolve, reject) => {
           const onAbort = () => {
@@ -194,7 +187,7 @@ describe('POST /api/ai/chat — OpenAI request deadline (Property K, Req 10.1, 1
     vi.useFakeTimers();
     let settled = false;
     const responsePromise = POST(
-      chatRequest({ messages: [userMessage], sessionId: 'sess-openai' }),
+      chatRequest({ messages: [userMessage], sessionId: 'sess-openrouter' }),
     ).then((response) => {
       settled = true;
       return response;
@@ -249,8 +242,8 @@ describe('POST /api/ai/chat — Codex request deadline (Property K, Req 10.1, 10
     // Req 10.3: nothing was applied to the single source of truth.
     expect(scaffoldPlanController.getScaffoldPlan()).toEqual(before);
 
-    // The OpenAI provider was never invoked on the Codex path.
-    expect(mockRunOpenAi).not.toHaveBeenCalled();
+    // The OpenRouter provider was never invoked on the Codex path.
+    expect(mockRunOpenRouter).not.toHaveBeenCalled();
   });
 });
 
@@ -261,10 +254,10 @@ describe('POST /api/ai/chat — Codex request deadline (Property K, Req 10.1, 10
 describe('POST /api/ai/chat — provider error preserves state (Property K, Req 10.2)', () => {
   it('returns a non-timeout error (502) and leaves the Project_State unchanged', async () => {
     vi.stubEnv('STILLAS_AI_PROVIDER', 'auto');
-    vi.stubEnv('OPENAI_API_KEY', 'test-key');
+    vi.stubEnv('OPENROUTER_API_KEY', 'test-key');
 
     // A provider error / unhandled exception that is NOT a timeout/abort.
-    mockRunOpenAi.mockRejectedValue(new Error('upstream provider failure'));
+    mockRunOpenRouter.mockRejectedValue(new Error('upstream provider failure'));
 
     const before = structuredClone(scaffoldPlanController.getScaffoldPlan());
 

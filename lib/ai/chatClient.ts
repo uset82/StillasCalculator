@@ -2,7 +2,7 @@
 //
 // This module is the browser-facing counterpart to `app/api/ai/chat/route.ts`.
 // The server route owns the trust boundary: it is the only place server-side
-// OpenAI/Codex authentication is used, the only place the Responses API or
+// OpenRouter/Codex authentication is used, the only place the model SDK or
 // local Codex SDK fallback is called, and the place where SDK tool calls are
 // dispatched to the deterministic engine and Structured Output is
 // schema-validated (Req 12.6, 13.x). This adapter is what the chat UI
@@ -128,7 +128,7 @@ export function appendMessage(
  *                    and `structuredOutput` is present when one was produced;
  *   - `rejected`     the outgoing message exceeded 2000 characters, so no
  *                    request was issued and Project_State is unchanged (Req 12.1);
- *   - `unavailable`  no OpenAI API key or local Codex login is configured
+ *   - `unavailable`  no OpenRouter API key or local Codex login is configured
  *                    server-side; show the "AI unavailable" state and keep all
  *                    non-AI features (Req 12.7);
  *   - `error`        the request failed or timed out; surface an error while
@@ -246,11 +246,34 @@ export type FetchLike = (
     headers?: Record<string, string>;
     body?: string;
     signal?: AbortSignal;
+    credentials?: RequestCredentials;
   },
 ) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
 
 const defaultFetch: FetchLike = (input, init) =>
   (globalThis.fetch as unknown as FetchLike)(input, init);
+
+function createTimeoutSignal(
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const abort = () => controller.abort();
+  if (signal?.aborted) {
+    controller.abort();
+  } else {
+    signal?.addEventListener('abort', abort, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    clear: () => {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', abort);
+    },
+  };
+}
 
 /**
  * Sends the chronological conversation in `request` to the chat route and
@@ -316,10 +339,12 @@ export async function fetchAiAuthStatus(
   fetchImpl: FetchLike = defaultFetch,
   signal?: AbortSignal,
 ): Promise<AiAuthStatusResponse | null> {
+  const timeout = createTimeoutSignal(signal, 8_000);
   try {
     const response = await fetchImpl(AI_AUTH_STATUS_ENDPOINT, {
       method: 'GET',
-      signal,
+      credentials: 'same-origin',
+      signal: timeout.signal,
     });
     if (!response.ok) {
       return null;
@@ -331,6 +356,8 @@ export async function fetchAiAuthStatus(
     return payload as AiAuthStatusResponse;
   } catch {
     return null;
+  } finally {
+    timeout.clear();
   }
 }
 
@@ -338,10 +365,12 @@ export async function startAiChatGptSignIn(
   fetchImpl: FetchLike = defaultFetch,
   signal?: AbortSignal,
 ): Promise<AiAuthSignInResponse> {
+  const timeout = createTimeoutSignal(signal, 15_000);
   try {
     const response = await fetchImpl(AI_AUTH_SIGN_IN_ENDPOINT, {
       method: 'POST',
-      signal,
+      credentials: 'same-origin',
+      signal: timeout.signal,
     });
     const payload = await response.json();
     if (typeof payload === 'object' && payload !== null) {
@@ -358,6 +387,8 @@ export async function startAiChatGptSignIn(
       message: 'Could not start ChatGPT sign-in through Codex.',
       error: error instanceof Error ? error.message : 'Unknown sign-in error.',
     };
+  } finally {
+    timeout.clear();
   }
 }
 

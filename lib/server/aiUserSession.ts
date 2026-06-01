@@ -74,7 +74,8 @@ export interface VerifiedCodexBackendSessionCookie {
 function getCookieSecret(): string {
   const configured =
     process.env.STILLAS_AI_AUTH_COOKIE_SECRET?.trim() ||
-    process.env.NEXTAUTH_SECRET?.trim();
+    process.env.NEXTAUTH_SECRET?.trim() ||
+    process.env.STILLAS_CODEX_BACKEND_SECRET?.trim();
   if (configured) return configured;
 
   if (process.env.NODE_ENV === 'development') {

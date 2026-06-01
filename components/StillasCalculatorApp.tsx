@@ -197,6 +197,9 @@ export function StillasCalculatorApp() {
   const [aiAuthDeviceAuth, setAiAuthDeviceAuth] = useState<
     AiAuthSignInResponse["deviceAuth"] | null
   >(null);
+  const aiAuthStatusRequest = useRef<Promise<AiAuthStatusResponse | null> | null>(
+    null,
+  );
 
   // Monotonic id source for chat messages so each has a stable unique key.
   const messageSeq = useRef(0);
@@ -218,13 +221,34 @@ export function StillasCalculatorApp() {
   );
 
   const refreshAiAuthStatus = useCallback(async () => {
-    setAiAuthStatusPending(true);
-    const status = await fetchAiAuthStatus();
-    setAiAuthStatus(status);
-    if (status) {
-      setAiUnavailable(!status.canUseAssistant);
+    if (aiAuthStatusRequest.current) {
+      return aiAuthStatusRequest.current;
     }
-    setAiAuthStatusPending(false);
+
+    setAiAuthStatusPending(true);
+    const request = fetchAiAuthStatus();
+    aiAuthStatusRequest.current = request;
+
+    try {
+      const status = await request;
+      setAiAuthStatus(status);
+      if (status) {
+        setAiUnavailable(!status.canUseAssistant);
+        if (
+          status.canUseAssistant ||
+          status.openAiAccountSession.authenticated
+        ) {
+          setAiAuthDeviceAuth(null);
+          setAiAuthActionMessage(null);
+        }
+      }
+      return status;
+    } finally {
+      if (aiAuthStatusRequest.current === request) {
+        aiAuthStatusRequest.current = null;
+        setAiAuthStatusPending(false);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -238,6 +262,9 @@ export function StillasCalculatorApp() {
     const result = await startAiChatGptSignIn();
     setAiAuthActionMessage(result.message);
     setAiAuthDeviceAuth(result.deviceAuth ?? null);
+    if (result.deviceAuth) {
+      setAiUnavailable(true);
+    }
     setAiAuthActionPending(false);
     void refreshAiAuthStatus();
   }, [refreshAiAuthStatus]);

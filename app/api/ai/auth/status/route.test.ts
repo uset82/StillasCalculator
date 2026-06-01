@@ -177,15 +177,16 @@ describe('GET /api/ai/auth/status', () => {
     expect(body.setup.deviceCodeSettingsUrl).toContain('Security');
   });
 
-  it('does not start the MCP bridge when the active provider is the Platform API', async () => {
-    vi.stubEnv('STILLAS_AI_PROVIDER', 'openai-api');
-    vi.stubEnv('OPENAI_API_KEY', 'test-key');
+  it('does not start the MCP bridge when the active provider is the OpenRouter API', async () => {
+    vi.stubEnv('STILLAS_AI_PROVIDER', 'openrouter-api');
+    vi.stubEnv('OPENROUTER_API_KEY', 'test-key');
 
     const response = await GET(new Request('http://localhost/api/ai/auth/status'));
     const body = await response.json();
 
-    expect(body.activeProvider).toBe('openai-api');
+    expect(body.activeProvider).toBe('openrouter-api');
     expect(body.canUseAssistant).toBe(true);
+    expect(body.openRouterApiKeyConfigured).toBe(true);
     expect(body.openAiAccountSession.authenticated).toBe(false);
     expect(mockMcpBridge).not.toHaveBeenCalled();
     expect(mockBackendStatus).not.toHaveBeenCalled();

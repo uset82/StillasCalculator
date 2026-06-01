@@ -4,7 +4,7 @@
 // every Material_List / report summary through before it can be presented or
 // stored:
 //
-//   - the OpenAI_Provider path (`runOpenAiAgentWithTools`) calls
+//   - the OpenRouter_Provider path (`runOpenRouterAgentWithTools`) calls
 //     `buildStructuredOutput` per tool result inside its agent loop;
 //   - the Codex_Provider path (`runCodexAgentWithTools`) calls
 //     `buildStructuredOutputForToolResults` over the collected MCP tool results.
@@ -13,7 +13,7 @@
 // field not defined by the schema, or a wrong-typed field throws a
 // `StructuredOutputError`, which the caller turns into an error indication while
 // preserving the existing Project_State (Req 4.2). Extracting the logic here —
-// rather than leaving it in `openAiAgentLoop.ts` — keeps the gate identical on
+// rather than leaving it in a provider loop — keeps the gate identical on
 // both backends and lets the Codex runner reuse it without importing the OpenAI
 // SDK.
 
