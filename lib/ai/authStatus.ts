@@ -11,6 +11,7 @@ export interface AiAuthStatusResponse {
   providerPreference: AiProviderPreference;
   activeProvider: AiActiveProvider;
   canUseAssistant: boolean;
+  openRouterApiKeyConfigured: boolean;
   openAiApiKeyConfigured: boolean;
   codexCli: {
     loggedIn: boolean;
@@ -33,7 +34,7 @@ export interface AiAuthStatusResponse {
   };
   setup: {
     chatGptSignInCommand: 'codex login';
-    providerEnvValue: 'openai-codex';
+    providerEnvValue: 'openrouter-api' | 'openai-codex';
     deviceCodeSettingsUrl?: string;
   };
 }

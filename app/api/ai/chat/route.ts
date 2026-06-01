@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import OpenAI from 'openai';
 
 import type { ChatMessage, ScaffoldPlan } from '@/lib/types';
 import { sendCodexBackendChatRequest } from '@/lib/ai/codexBackendClient';
@@ -7,11 +6,16 @@ import {
   messageRequiresTools,
   runCodexAgentWithTools,
 } from '@/lib/ai/codexAgentRunner';
-import { newAiSessionId, runOpenAiAgentWithTools, StructuredOutputError } from '@/lib/ai/openAiAgentLoop';
+import {
+  createOpenRouterClient,
+  newAiSessionId,
+  runOpenRouterAgentWithTools,
+  StructuredOutputError,
+} from '@/lib/ai/openRouterAgentLoop';
 import { buildStructuredOutputForToolResults } from '@/lib/ai/structuredOutputGate';
 import {
   getAiProviderPreference,
-  getOpenAiApiKey,
+  getOpenRouterApiKey,
 } from '@/lib/server/aiAuth';
 import {
   getCodexBackendSessionCookie,
@@ -47,8 +51,8 @@ export interface AiToolResult {
   error?: string;
 }
 
-async function runOpenAiBackedAgent(
-  client: OpenAI,
+async function runOpenRouterBackedAgent(
+  client: ReturnType<typeof createOpenRouterClient>,
   messages: ChatMessage[],
   sessionId: string,
   latestUser: ChatMessage | undefined,
@@ -59,7 +63,7 @@ async function runOpenAiBackedAgent(
   const timeoutId = setTimeout(() => abortController.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const result = await runOpenAiAgentWithTools(
+    const result = await runOpenRouterAgentWithTools(
       client,
       messages,
       sessionId,
@@ -83,7 +87,7 @@ async function runOpenAiBackedAgent(
           timestamp: Date.now(),
         },
       ];
-      finalResult = await runOpenAiAgentWithTools(
+      finalResult = await runOpenRouterAgentWithTools(
         client,
         retryMessages,
         sessionId,
@@ -147,12 +151,15 @@ export async function POST(request: Request): Promise<NextResponse<AiChatRespons
 
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   const providerPreference = getAiProviderPreference();
-  const apiKey = getOpenAiApiKey();
+  const openRouterApiKey = getOpenRouterApiKey();
   const openAiAccountSession = getOpenAiAccountSessionState(request);
   const backendSession = getCodexBackendSessionCookie(request);
   const sessionId = body.sessionId ?? newAiSessionId();
 
   if (providerPreference === 'off') {
+    return NextResponse.json({ unavailable: true });
+  }
+  if (providerPreference === 'openai-api') {
     return NextResponse.json({ unavailable: true });
   }
 
@@ -193,9 +200,11 @@ export async function POST(request: Request): Promise<NextResponse<AiChatRespons
     });
   }
 
-  const useOpenAiSdk = providerPreference !== 'codex-cli' && Boolean(apiKey);
+  const useOpenRouterSdk =
+    (providerPreference === 'openrouter-api' || providerPreference === 'auto') &&
+    Boolean(openRouterApiKey);
 
-  if (!useOpenAiSdk && providerPreference !== 'openai-api') {
+  if (!useOpenRouterSdk && providerPreference !== 'openrouter-api') {
     if (!openAiAccountSession.authenticated) {
       return NextResponse.json({ unavailable: true });
     }
@@ -230,7 +239,7 @@ export async function POST(request: Request): Promise<NextResponse<AiChatRespons
 
     if (codexResult.ok) {
       // Structured Output conformance gate (Req 4.1, 4.2) — identical gate to
-      // the OpenAI path. Validate any Material_List / report summary BEFORE
+      // the OpenRouter path. Validate any Material_List / report summary BEFORE
       // applying the returned plan, so a nonconforming output is neither
       // presented nor stored and the existing Project_State is preserved.
       let structuredOutput: unknown;
@@ -273,12 +282,16 @@ export async function POST(request: Request): Promise<NextResponse<AiChatRespons
     );
   }
 
-  if (!apiKey) {
+  if (!openRouterApiKey) {
     return NextResponse.json({ unavailable: true });
   }
 
-  return runOpenAiBackedAgent(
-    new OpenAI({ apiKey }),
+  return runOpenRouterBackedAgent(
+    createOpenRouterClient({
+      apiKey: openRouterApiKey,
+      siteUrl: process.env.OPENROUTER_SITE_URL?.trim() || undefined,
+      appTitle: process.env.OPENROUTER_APP_TITLE?.trim() || undefined,
+    }),
     messages,
     sessionId,
     latestUser,

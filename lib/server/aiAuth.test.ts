@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getAiProviderPreference,
   getOpenAiApiKey,
+  getOpenRouterApiKey,
   resolveActiveAiProvider,
 } from './aiAuth';
 
@@ -22,9 +23,28 @@ describe('AI auth provider selection', () => {
     );
   });
 
-  it('prefers signed-in OpenAI account auth in auto mode before API-key auth', () => {
+  it('accepts openrouter-api aliases as the hosted provider', () => {
+    expect(
+      getAiProviderPreference({ STILLAS_AI_PROVIDER: 'openrouter-api' }),
+    ).toBe('openrouter-api');
+    expect(getAiProviderPreference({ STILLAS_AI_PROVIDER: 'openrouter' })).toBe(
+      'openrouter-api',
+    );
+  });
+
+  it('prefers OpenRouter API auth in auto mode before account or Codex auth', () => {
     expect(
       resolveActiveAiProvider('auto', {
+        hasOpenRouterApiKey: true,
+        hasOpenAiApiKey: true,
+        hasCodexChatGptAuth: true,
+        hasOpenAiAccountAuth: true,
+      }),
+    ).toBe('openrouter-api');
+
+    expect(
+      resolveActiveAiProvider('auto', {
+        hasOpenRouterApiKey: false,
         hasOpenAiApiKey: true,
         hasCodexChatGptAuth: true,
         hasOpenAiAccountAuth: true,
@@ -33,13 +53,7 @@ describe('AI auth provider selection', () => {
 
     expect(
       resolveActiveAiProvider('auto', {
-        hasOpenAiApiKey: true,
-        hasCodexChatGptAuth: true,
-      }),
-    ).toBe('codex-cli');
-
-    expect(
-      resolveActiveAiProvider('auto', {
+        hasOpenRouterApiKey: false,
         hasOpenAiApiKey: false,
         hasCodexChatGptAuth: true,
       }),
@@ -47,10 +61,29 @@ describe('AI auth provider selection', () => {
 
     expect(
       resolveActiveAiProvider('auto', {
+        hasOpenRouterApiKey: false,
         hasOpenAiApiKey: true,
         hasCodexChatGptAuth: false,
       }),
-    ).toBe('openai-api');
+    ).toBe('none');
+  });
+
+  it('requires an OpenRouter key for explicit openrouter-api mode', () => {
+    expect(
+      resolveActiveAiProvider('openrouter-api', {
+        hasOpenRouterApiKey: false,
+        hasOpenAiApiKey: true,
+        hasCodexChatGptAuth: true,
+      }),
+    ).toBe('none');
+
+    expect(
+      resolveActiveAiProvider('openrouter-api', {
+        hasOpenRouterApiKey: true,
+        hasOpenAiApiKey: false,
+        hasCodexChatGptAuth: false,
+      }),
+    ).toBe('openrouter-api');
   });
 
   it('requires a user account session for explicit openai-account mode', () => {
@@ -81,6 +114,8 @@ describe('AI auth provider selection', () => {
   });
 
   it('trims empty API keys to undefined', () => {
+    expect(getOpenRouterApiKey({ OPENROUTER_API_KEY: '   ' })).toBeUndefined();
+    expect(getOpenRouterApiKey({ OPENROUTER_API_KEY: 'or-test' })).toBe('or-test');
     expect(getOpenAiApiKey({ OPENAI_API_KEY: '   ' })).toBeUndefined();
     expect(getOpenAiApiKey({ OPENAI_API_KEY: 'sk-test' })).toBe('sk-test');
   });

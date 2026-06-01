@@ -100,16 +100,17 @@ describe("AiChatPanel in-flight disabling (Req 12.3)", () => {
 });
 
 describe("AiChatPanel AI connection status", () => {
-  it("shows hosted OpenAI API tool access without offering user account sign-in", () => {
+  it("shows hosted OpenRouter API tool access without offering user account sign-in", () => {
     render(
       <AiChatPanel
         messages={SAMPLE_MESSAGES}
         onSendMessage={vi.fn()}
         authStatus={{
-          providerPreference: "auto",
-          activeProvider: "openai-api",
+          providerPreference: "openrouter-api",
+          activeProvider: "openrouter-api",
           canUseAssistant: true,
-          openAiApiKeyConfigured: true,
+          openRouterApiKeyConfigured: true,
+          openAiApiKeyConfigured: false,
           codexCli: { loggedIn: false, method: null },
           openAiAccountSession: {
             authenticated: false,
@@ -125,7 +126,7 @@ describe("AiChatPanel AI connection status", () => {
           },
           setup: {
             chatGptSignInCommand: "codex login",
-            providerEnvValue: "openai-codex",
+            providerEnvValue: "openrouter-api",
           },
         }}
         onStartChatGptSignIn={vi.fn()}
@@ -133,7 +134,7 @@ describe("AiChatPanel AI connection status", () => {
     );
 
     expect(screen.getByTestId("ai-auth-status")).toHaveTextContent(
-      "OpenAI API + app tools connected",
+      "OpenRouter free model + app tools connected",
     );
     expect(screen.queryByTestId("ai-auth-sign-in-button")).not.toBeInTheDocument();
     expect(screen.getByTestId("ai-input-textarea")).not.toBeDisabled();
@@ -148,6 +149,7 @@ describe("AiChatPanel AI connection status", () => {
           providerPreference: "auto",
           activeProvider: "openai-account",
           canUseAssistant: true,
+          openRouterApiKeyConfigured: false,
           openAiApiKeyConfigured: true,
           codexCli: { loggedIn: false, method: null },
           openAiAccountSession: {
@@ -187,6 +189,7 @@ describe("AiChatPanel AI connection status", () => {
           providerPreference: "codex-cli",
           activeProvider: "codex-cli",
           canUseAssistant: true,
+          openRouterApiKeyConfigured: false,
           openAiApiKeyConfigured: false,
           codexCli: { loggedIn: true, method: "chatgpt" },
           openAiAccountSession: {
@@ -215,7 +218,7 @@ describe("AiChatPanel AI connection status", () => {
     expect(screen.getByTestId("ai-input-textarea")).not.toBeDisabled();
   });
 
-  it("asks the user to sign in when the assistant is unavailable", () => {
+  it("asks the app owner to configure OpenRouter when the assistant is unavailable by default", () => {
     render(
       <AiChatPanel
         messages={SAMPLE_MESSAGES}
@@ -225,7 +228,7 @@ describe("AiChatPanel AI connection status", () => {
     );
 
     expect(screen.getByTestId("ai-unavailable-message")).toHaveTextContent(
-      "Sign in with your ChatGPT account",
+      "server-side OpenRouter API access",
     );
     expect(screen.getByTestId("ai-input-textarea")).toBeDisabled();
   });
@@ -240,6 +243,7 @@ describe("AiChatPanel AI connection status", () => {
           providerPreference: "openai-account",
           activeProvider: "none",
           canUseAssistant: false,
+          openRouterApiKeyConfigured: false,
           openAiApiKeyConfigured: false,
           codexCli: { loggedIn: false, method: null },
           openAiAccountSession: {
@@ -281,6 +285,7 @@ describe("AiChatPanel AI connection status", () => {
           providerPreference: "codex-cli",
           activeProvider: "none",
           canUseAssistant: false,
+          openRouterApiKeyConfigured: false,
           openAiApiKeyConfigured: false,
           codexCli: { loggedIn: true, method: "chatgpt" },
           openAiAccountSession: {
@@ -325,6 +330,7 @@ describe("AiChatPanel AI connection status", () => {
           providerPreference: "codex-cli",
           activeProvider: "none",
           canUseAssistant: false,
+          openRouterApiKeyConfigured: false,
           openAiApiKeyConfigured: false,
           codexCli: { loggedIn: false, method: null },
           openAiAccountSession: {
@@ -391,6 +397,7 @@ describe("AiChatPanel AI connection status", () => {
           providerPreference: "openai-account",
           activeProvider: "none",
           canUseAssistant: false,
+          openRouterApiKeyConfigured: false,
           openAiApiKeyConfigured: false,
           codexCli: { loggedIn: false, method: null },
           openAiAccountSession: {
@@ -435,6 +442,7 @@ describe("AiChatPanel AI connection status", () => {
           providerPreference: "codex-cli",
           activeProvider: "none",
           canUseAssistant: false,
+          openRouterApiKeyConfigured: false,
           openAiApiKeyConfigured: false,
           codexCli: { loggedIn: true, method: "api-key" },
           openAiAccountSession: {
@@ -477,6 +485,7 @@ describe("AiChatPanel AI connection status", () => {
           providerPreference: "codex-cli",
           activeProvider: "none",
           canUseAssistant: false,
+          openRouterApiKeyConfigured: false,
           openAiApiKeyConfigured: false,
           codexCli: { loggedIn: true, method: "chatgpt" },
           openAiAccountSession: {

@@ -28,13 +28,17 @@ export async function POST(
   const now = Date.now();
   const providerPreference = getAiProviderPreference();
 
-  if (providerPreference === 'off' || providerPreference === 'openai-api') {
+  if (
+    providerPreference === 'off' ||
+    providerPreference === 'openai-api' ||
+    providerPreference === 'openrouter-api'
+  ) {
     return NextResponse.json(
       {
         ok: false,
         message:
-          'OpenAI account sign-in is disabled while this deployment is configured for the API provider.',
-        error: 'OpenAI account sign-in is disabled for this provider.',
+          'Account sign-in is disabled while this deployment is configured for the OpenRouter API provider.',
+        error: 'Account sign-in is disabled for this provider.',
       },
       { status: 409 },
     );

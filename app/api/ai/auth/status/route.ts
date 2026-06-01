@@ -11,6 +11,7 @@ import { ensurePersistentMcpToolBridge } from '@/lib/ai/mcpBridge';
 import {
   getAiProviderPreference,
   getOpenAiApiKey,
+  getOpenRouterApiKey,
   resolveActiveAiProvider,
 } from '@/lib/server/aiAuth';
 import { findAuthenticatedLocalCodexBackendSession } from '@/lib/server/localCodexBackendSessionRecovery';
@@ -49,8 +50,40 @@ export async function GET(
   const now = Date.now();
   const providerPreference = getAiProviderPreference();
   const openAiApiKeyConfigured = Boolean(getOpenAiApiKey());
+  const openRouterApiKeyConfigured = Boolean(getOpenRouterApiKey());
   const session = getOpenAiAccountSessionState(request, now);
   const backendSession = getCodexBackendSessionCookie(request, now);
+
+  if (providerPreference === 'openrouter-api') {
+    const body: AiAuthStatusResponse = {
+      providerPreference,
+      activeProvider: openRouterApiKeyConfigured ? 'openrouter-api' : 'none',
+      canUseAssistant: openRouterApiKeyConfigured,
+      openAiApiKeyConfigured: false,
+      openRouterApiKeyConfigured,
+      codexCli: { loggedIn: false, method: null },
+      openAiAccountSession: {
+        authenticated: false,
+        pending: false,
+        expiresAt: null,
+      },
+      mcp: disconnectedMcp(),
+      setup: {
+        chatGptSignInCommand: 'codex login',
+        providerEnvValue: 'openrouter-api',
+        deviceCodeSettingsUrl: CODEX_DEVICE_CODE_SETTINGS_URL,
+      },
+    };
+    const response = NextResponse.json(body);
+    if (backendSession.data || backendSession.clearCookie) {
+      clearCodexBackendSessionCookie(response);
+    }
+    clearOpenAiAccountSessionCookie(response);
+    clearPendingOpenAiAccountSessionCookie(response);
+    clearOpenAiAccountDeviceCookie(response);
+    clearOpenAiAccountTokenSessionCookie(response);
+    return response;
+  }
 
   if (providerPreference === 'openai-account') {
     let authenticated = false;
@@ -97,6 +130,7 @@ export async function GET(
       activeProvider: authenticated ? 'openai-account' : 'none',
       canUseAssistant: authenticated,
       openAiApiKeyConfigured: false,
+      openRouterApiKeyConfigured,
       codexCli: { loggedIn: false, method: null },
       openAiAccountSession: {
         authenticated,
@@ -150,6 +184,7 @@ export async function GET(
     hasCodexChatGptAuth &&
     (session.authenticated || shouldPromotePendingSession);
   const resolvedProvider = resolveActiveAiProvider(providerPreference, {
+    hasOpenRouterApiKey: openRouterApiKeyConfigured,
     hasOpenAiApiKey: openAiApiKeyConfigured,
     hasCodexChatGptAuth: localCodexSessionAuthenticated,
     hasOpenAiAccountAuth: false,
@@ -165,8 +200,9 @@ export async function GET(
     providerPreference,
     activeProvider,
     canUseAssistant:
-      activeProvider === 'openai-api' || activeProvider === 'codex-cli',
+      activeProvider === 'openrouter-api' || activeProvider === 'codex-cli',
     openAiApiKeyConfigured,
+    openRouterApiKeyConfigured,
     codexCli,
     openAiAccountSession: {
       authenticated: localCodexSessionAuthenticated,

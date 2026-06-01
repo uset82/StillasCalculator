@@ -1,20 +1,21 @@
-# Codex AI Auth
+# AI Auth
 
-StillasCalculator supports three server-side AI auth modes:
+StillasCalculator's hosted assistant now uses OpenRouter server-side, so public visitors can try the app without a ChatGPT/OpenAI sign-in flow.
 
-- `STILLAS_AI_PROVIDER=openai-account`: public deployment mode. Netlify proxies each browser session to a persistent Codex backend, and that backend owns ChatGPT device-code auth through `codex app-server`.
-- `STILLAS_AI_PROVIDER=openai-api` plus `OPENAI_API_KEY`: app-owner Platform API billing through the OpenAI SDK.
+- `STILLAS_AI_PROVIDER=openrouter-api` plus `OPENROUTER_API_KEY`: public deployment mode. Netlify calls OpenRouter from the server route, using `OPENROUTER_MODEL=openrouter/free` by default for low-volume demos.
+- `STILLAS_AI_PROVIDER=openai-account`: legacy account mode. Netlify proxies each browser session to a persistent Codex backend, and that backend owns ChatGPT device-code auth through `codex app-server`.
 - `STILLAS_AI_PROVIDER=codex-cli`: local development mode. The local Codex CLI must be signed in with a ChatGPT/OpenAI account and MCP tools must be available.
+- `STILLAS_AI_PROVIDER=off`: disable the assistant.
 
-Public browser users sign in with their personal ChatGPT account. The app cannot bypass ChatGPT's device-code security setting: personal users must enable device code login in ChatGPT Security Settings, and workspace users may need an admin to allow it.
+The browser never receives OpenRouter, OpenAI, ChatGPT, Codex, or refresh tokens. OpenRouter keys stay in Netlify/server environment variables.
 
-The browser never receives OpenAI, ChatGPT, Codex, or refresh tokens. It only receives the verification URL and one-time user code returned by Codex app-server.
+Legacy account mode still cannot bypass ChatGPT's device-code security setting: personal users must enable device code login in ChatGPT Security Settings, and workspace users may need an admin to allow it.
 
 ## Public Routes
 
-- `GET /api/ai/auth/status` checks the selected provider. In account mode it reads the signed backend-session cookie and asks the Codex backend for auth state.
+- `GET /api/ai/auth/status` checks the selected provider. In OpenRouter mode it reports whether `OPENROUTER_API_KEY` is configured. In account mode it reads the signed backend-session cookie and asks the Codex backend for auth state.
 - `POST /api/ai/auth/sign-in` starts `account/login/start` with `type: "chatgptDeviceCode"` on the Codex backend and returns `{ verificationUri, userCode, expiresAt }`.
-- `POST /api/ai/chat` proxies authenticated account-mode requests to the Codex backend. API-key and local CLI modes remain local to the Netlify function.
+- `POST /api/ai/chat` calls OpenRouter through `@openrouter/agent` in hosted mode, proxies authenticated account-mode requests to the Codex backend, and keeps local CLI mode inside the Netlify function.
 
 ## Codex Backend
 
@@ -36,13 +37,16 @@ The backend:
 
 | Variable | Purpose |
 |----------|---------|
-| `STILLAS_AI_PROVIDER` | `openai-account`, `auto`, `openai-api`, `codex-cli`, or `off` |
+| `STILLAS_AI_PROVIDER` | `openrouter-api`, `auto`, `openai-account`, `codex-cli`, or `off` |
+| `OPENROUTER_API_KEY` | Server-only OpenRouter key. Set in Netlify UI/CLI, not source control. |
+| `OPENROUTER_MODEL` | OpenRouter model id. Defaults to `openrouter/free`. |
+| `OPENROUTER_SITE_URL` | Optional OpenRouter referer/leaderboard URL. |
+| `OPENROUTER_APP_TITLE` | Optional OpenRouter app title. Defaults to `StillasCalculator`. |
 | `STILLAS_CODEX_BACKEND_URL` | Netlify-to-backend URL, for example `https://codex-backend.example.com` |
 | `STILLAS_CODEX_BACKEND_SECRET` | Shared bearer secret for Netlify-to-backend requests. Set in Netlify UI/CLI, not in source control. |
 | `STILLAS_AI_AUTH_COOKIE_SECRET` | Optional cookie-signing secret. If omitted, the backend secret signs auth cookies. Keep this stable across deploys/restarts. |
 | `STILLAS_CODEX_DATA_DIR` | Backend-only persistent session root for per-user `CODEX_HOME` directories |
 | `STILLAS_CODEX_SESSION_TTL_SECONDS` | Backend session lifetime, default `86400` |
-| `OPENAI_API_KEY` | Optional server-only Platform key for `openai-api`. Do not use for account-required public mode. |
 | `STILLAS_CODEX_TIMEOUT_MS` | Codex turn timeout, default `45000` |
 | `STILLAS_CODEX_MODEL` | Codex SDK model override |
 
@@ -50,13 +54,13 @@ The backend:
 
 Every calculation, drawing, CAD export, facade selection, scaffold update, and material list must go through deterministic app tools. The assistant cannot invent quantities.
 
-- OpenAI API path: function tools via Responses API -> `lib/ai/toolExecutor.ts`
+- OpenRouter API path: `@openrouter/agent` tools -> `lib/ai/toolExecutor.ts`
 - Codex account/local path: Stillas MCP server -> same tool executor
 
 Workflow:
 
 ```text
-User -> Codex/OpenAI assistant -> app tool call -> ScaffoldPlan update -> map/CAD/material UI
+User -> OpenRouter/Codex assistant -> app tool call -> ScaffoldPlan update -> map/CAD/material UI
 ```
 
 Manual MCP smoke test:

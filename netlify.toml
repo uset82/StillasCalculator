@@ -5,6 +5,9 @@
 [build.environment]
   NODE_VERSION = "20"
   NEXT_TELEMETRY_DISABLED = "1"
-  STILLAS_AI_PROVIDER = "openai-account"
-  # Set STILLAS_CODEX_BACKEND_URL and STILLAS_CODEX_BACKEND_SECRET in the
-  # Netlify UI/CLI. Do not commit the backend secret.
+  STILLAS_AI_PROVIDER = "openrouter-api"
+  OPENROUTER_MODEL = "openrouter/free"
+  OPENROUTER_APP_TITLE = "StillasCalculator"
+  # Set OPENROUTER_API_KEY in the Netlify UI/CLI. Keep it server-side and do
+  # not commit a real key. The free router lets public visitors try the app
+  # without ChatGPT/OpenAI account sign-in.

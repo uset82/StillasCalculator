@@ -46,8 +46,8 @@ beforeEach(() => {
 
 describe('POST /api/ai/auth/sign-in', () => {
   it('does not start ChatGPT sign-in when the hosted API key provider is configured', async () => {
-    vi.stubEnv('STILLAS_AI_PROVIDER', 'openai-api');
-    vi.stubEnv('OPENAI_API_KEY', 'sk-test');
+    vi.stubEnv('STILLAS_AI_PROVIDER', 'openrouter-api');
+    vi.stubEnv('OPENROUTER_API_KEY', 'or-test');
 
     const response = await POST(request());
     const body = await response.json();

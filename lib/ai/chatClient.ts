@@ -2,7 +2,7 @@
 //
 // This module is the browser-facing counterpart to `app/api/ai/chat/route.ts`.
 // The server route owns the trust boundary: it is the only place server-side
-// OpenAI/Codex authentication is used, the only place the Responses API or
+// OpenRouter/Codex authentication is used, the only place the model SDK or
 // local Codex SDK fallback is called, and the place where SDK tool calls are
 // dispatched to the deterministic engine and Structured Output is
 // schema-validated (Req 12.6, 13.x). This adapter is what the chat UI
@@ -128,7 +128,7 @@ export function appendMessage(
  *                    and `structuredOutput` is present when one was produced;
  *   - `rejected`     the outgoing message exceeded 2000 characters, so no
  *                    request was issued and Project_State is unchanged (Req 12.1);
- *   - `unavailable`  no OpenAI API key or local Codex login is configured
+ *   - `unavailable`  no OpenRouter API key or local Codex login is configured
  *                    server-side; show the "AI unavailable" state and keep all
  *                    non-AI features (Req 12.7);
  *   - `error`        the request failed or timed out; surface an error while

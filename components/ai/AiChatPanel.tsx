@@ -20,6 +20,9 @@ function getAuthStatusLabel(status: AiAuthStatusResponse | null | undefined): st
   if (status.activeProvider === "openai-account") {
     return "ChatGPT account + app tools connected";
   }
+  if (status.activeProvider === "openrouter-api") {
+    return "OpenRouter free model + app tools connected";
+  }
   if (status.activeProvider === "openai-api") return "OpenAI API + app tools connected";
   if (status.openAiAccountSession.pending) return "Waiting for OpenAI sign-in";
   if (status.providerPreference === "openai-account") {
@@ -65,6 +68,7 @@ function canStartChatGptSignIn(
   if (
     !supportsAccountSignIn ||
     status.activeProvider === "off" ||
+    status.activeProvider === "openrouter-api" ||
     status.activeProvider === "openai-api" ||
     status.openAiAccountSession.authenticated ||
     status.openAiAccountSession.pending
@@ -104,8 +108,8 @@ export interface AiChatPanelProps {
    */
   pending?: boolean;
   /**
-   * Whether the assistant is unavailable because neither server-side OpenAI API
-   * auth nor local Codex auth is configured (Req 12.7). When true, the
+ * Whether the assistant is unavailable because server-side OpenRouter API auth
+ * or an optional local Codex auth path is not configured (Req 12.7). When true, the
    * panel shows an "AI unavailable" notice and disables the composer while
    * every non-AI feature keeps working.
    */
@@ -294,6 +298,11 @@ export function AiChatPanel({
             <>
               Codex is signed in, but the Stillas MCP tool bridge is not connected.
               Check again to restart the bridge. All other features remain available.
+            </>
+          ) : !authStatus || authStatus.providerPreference === "openrouter-api" ? (
+            <>
+              The AI assistant is not connected. The app owner needs to configure
+              server-side OpenRouter API access.
             </>
           ) : authStatus?.providerPreference !== "openai-api" ? (
             <>

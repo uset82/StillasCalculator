@@ -8,7 +8,7 @@
 //   - Geocoding and Overpass are reached only through server routes; the
 //     browser-facing adapters never call the public providers directly
 //     (Req 3.9, 4.7).
-//   - The OpenAI API key is read only inside the server AI auth boundary and
+//   - The OpenRouter API key is read only inside the server AI auth boundary and
 //     never leaks into a client/component module that ships in the browser bundle
 //     (Req 12.6).
 //   - Exactly the six AI tools are registered (Req 13.2).
@@ -160,20 +160,20 @@ describe('geocoding & Overpass server-side trust boundary (Req 3.9, 4.7)', () =>
 });
 
 // ---------------------------------------------------------------------------
-// Req 12.6 — The OpenAI API key is read only in server AI auth code and is
+// Req 12.6 — The OpenRouter API key is read only in server AI auth code and is
 // absent from every client/component module that ships to the browser.
 // ---------------------------------------------------------------------------
 
-describe('OpenAI key confinement (Req 12.6)', () => {
-  const KEY = 'OPENAI_API_KEY';
+describe('OpenRouter key confinement (Req 12.6)', () => {
+  const KEY = 'OPENROUTER_API_KEY';
   const SERVER_AUTH_MODULE = join(REPO_ROOT, 'lib/server/aiAuth.ts');
 
-  it('reads the OpenAI key only in the server AI auth boundary', () => {
+  it('reads the OpenRouter key only in the server AI auth boundary', () => {
     const serverAuthModule = readFileSync(SERVER_AUTH_MODULE, 'utf8');
     expect(serverAuthModule).toContain(KEY);
   });
 
-  it('never references the OpenAI key in client AI modules or components (Req 12.6)', () => {
+  it('never references the OpenRouter key in client AI modules or components (Req 12.6)', () => {
     const candidateFiles = [
       ...collectSourceFiles('lib/ai'),
       ...collectSourceFiles('components'),
