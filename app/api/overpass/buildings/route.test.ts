@@ -41,6 +41,7 @@ describe('GET /api/overpass/buildings — error and empty branches', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   // --- Req 4.5: non-success upstream response ----------------------------
@@ -99,6 +100,78 @@ describe('GET /api/overpass/buildings — error and empty branches', () => {
     expect(body.buildings).toEqual([]);
     expect(body.lat).toBe(LAT);
     expect(body.lon).toBe(LON);
+  });
+
+  it('falls back to Overpass GET when a mirror rejects the POST form', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(fakeResponse(false, 'Method rejected', 405))
+      .mockResolvedValueOnce(
+        fakeResponse(true, {
+          elements: [
+            {
+              type: 'way',
+              id: 123,
+              geometry: [
+                { lat: LAT, lon: LON },
+                { lat: LAT, lon: LON + 0.0001 },
+                { lat: LAT + 0.0001, lon: LON + 0.0001 },
+                { lat: LAT + 0.0001, lon: LON },
+                { lat: LAT, lon: LON },
+              ],
+            },
+          ],
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await GET(buildingsRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.error).toBeUndefined();
+    expect(body.empty).toBe(false);
+    expect(body.buildings).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('POST');
+    expect(fetchMock.mock.calls[1][1]?.method).toBe('GET');
+  });
+
+  it('continues to the next mirror when one mirror returns an empty element list', async () => {
+    vi.stubEnv(
+      'OVERPASS_ENDPOINTS',
+      'https://empty.example/interpreter,https://fresh.example/interpreter',
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(fakeResponse(true, { elements: [] }))
+      .mockResolvedValueOnce(
+        fakeResponse(true, {
+          elements: [
+            {
+              type: 'way',
+              id: 456,
+              geometry: [
+                { lat: LAT, lon: LON },
+                { lat: LAT, lon: LON + 0.0001 },
+                { lat: LAT + 0.0001, lon: LON + 0.0001 },
+                { lat: LAT + 0.0001, lon: LON },
+                { lat: LAT, lon: LON },
+              ],
+            },
+          ],
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await GET(buildingsRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.error).toBeUndefined();
+    expect(body.empty).toBe(false);
+    expect(body.buildings).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   // --- Req 4.6: empty result (no building elements) ----------------------

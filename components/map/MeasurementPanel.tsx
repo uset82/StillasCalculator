@@ -194,69 +194,88 @@ export function MeasurementPanel({
       aria-label="Polygon measurements"
       className={cn("flex flex-col gap-4", className)}
     >
-      <h2 className="text-sm font-semibold text-gray-700">Measurements</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 font-mono">
+          Geometric Measurements
+        </h2>
+        {hasValidMeasurements ? (
+          <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-mono font-medium text-emerald-700 border border-emerald-500/20">
+            PERIMETER LOCKED
+          </span>
+        ) : null}
+      </div>
 
       {/* Invalid-polygon error indication (Req 6.10). */}
       {!hasValidMeasurements ? (
-        <p
+        <div
           role="alert"
           data-testid="measurement-invalid"
-          className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+          className="rounded-xl border border-amber-300 bg-amber-50/80 p-3.5 text-xs text-amber-900"
         >
-          No valid perimeter yet. Draw or select a building outline with at
-          least 3 vertices and no crossing sides to see measurements.
-        </p>
+          <div className="flex items-start gap-2">
+            <span className="text-base leading-none">⚠️</span>
+            <p className="font-medium leading-relaxed">
+              No valid perimeter yet. Draw or select a building outline with at least 3 vertices and no crossing sides to see measurements.
+            </p>
+          </div>
+        </div>
       ) : (
         <>
           {/* Live perimeter / area / scaffold length readouts (Req 6.4, 6.5). */}
           <dl
             data-testid="measurement-readout"
-            className="grid grid-cols-2 gap-2"
+            className="grid grid-cols-2 gap-2.5"
           >
             <Readout
               label="Perimeter"
               value={`${formatMeasurement(measurements.perimeterMeters, decimalPlaces)} m`}
               testId="readout-perimeter"
+              icon="📏"
             />
             <Readout
-              label="Area"
+              label="Footprint Area"
               value={`${formatMeasurement(measurements.areaSquareMeters, decimalPlaces)} m²`}
               testId="readout-area"
+              icon="📐"
             />
             <Readout
-              label="Scaffold length"
+              label="Scaffold Length"
               value={
                 scaffoldLengthMeters === null
                   ? "—"
                   : `${formatMeasurement(scaffoldLengthMeters, decimalPlaces)} m`
               }
               testId="readout-scaffold-length"
+              icon="🏗️"
+              highlight
             />
             <Readout
-              label="Sides"
+              label="Facade Sides"
               value={String(sideLengths.length)}
               testId="readout-side-count"
+              icon="🔢"
             />
           </dl>
 
           {/* Per-side lengths in ring order (Req 6.3, 6.4). */}
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-gray-500">
-              Side lengths
+          <div className="flex flex-col gap-1.5 rounded-xl border border-slate-200 bg-slate-50/60 p-2.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 font-mono">
+              Individual Facade Sides
             </span>
             <ul
               data-testid="side-lengths"
-              className="flex flex-col gap-1"
+              className="flex flex-col gap-1 max-h-36 overflow-y-auto pr-1"
             >
               {sideLengths.map((length, index) => (
                 <li
-                  // Side index is stable for a given ring order.
                   key={index}
                   data-testid={`side-length-${index}`}
-                  className="flex items-center justify-between rounded-md bg-gray-50 px-2 py-1 text-sm text-gray-800"
+                  className="flex items-center justify-between rounded-lg bg-white px-2.5 py-1.5 text-xs text-slate-800 border border-slate-200/80 shadow-xs"
                 >
-                  <span>Side {index + 1}</span>
-                  <span>{formatMeasurement(length, decimalPlaces)} m</span>
+                  <span className="font-medium text-slate-600">Side {index + 1}</span>
+                  <span className="font-mono font-semibold text-slate-900">
+                    {formatMeasurement(length, decimalPlaces)} m
+                  </span>
                 </li>
               ))}
             </ul>
@@ -265,32 +284,32 @@ export function MeasurementPanel({
       )}
 
       {/* Decimal-places control, 0–3 (Req 6.5). */}
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
         <label
           htmlFor={decimalsId}
-          className="text-sm font-medium text-gray-700"
+          className="text-xs font-bold uppercase tracking-wider text-slate-600 font-mono"
         >
-          Decimal places
+          Decimal Precision
         </label>
         <select
           id={decimalsId}
           value={decimalPlaces}
           onChange={(event) => handleDecimalPlacesChange(event.target.value)}
           data-testid="decimal-places-control"
-          className="min-h-[44px] w-full rounded-lg border border-gray-300 px-3 py-2 text-base text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="min-h-[44px] w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
         >
           {DECIMAL_PLACE_OPTIONS.map((places) => (
             <option key={places} value={places}>
-              {places}
+              {places} decimal {places === 1 ? "place" : "places"} ({places === 0 ? "1 m" : (1 / Math.pow(10, places)).toFixed(places) + " m"})
             </option>
           ))}
         </select>
       </div>
 
       {/* Waste-factor control, 0–100 with validation message (Req 6.6, 6.11). */}
-      <div className="flex flex-col gap-1">
-        <label htmlFor={wasteId} className="text-sm font-medium text-gray-700">
-          Waste factor
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={wasteId} className="text-xs font-bold uppercase tracking-wider text-slate-600 font-mono">
+          Material Waste Factor
         </label>
         <div className="flex items-center gap-2">
           <input
@@ -306,88 +325,109 @@ export function MeasurementPanel({
             aria-describedby={wasteError ? `${wasteId}-error` : `${wasteId}-hint`}
             data-testid="waste-factor-control"
             className={cn(
-              "min-h-[44px] w-full rounded-lg border px-3 py-2 text-base text-gray-900 shadow-sm focus:outline-none focus:ring-2",
+              "min-h-[44px] w-full rounded-xl border px-3 py-2 text-sm font-mono font-medium text-slate-900 shadow-sm focus:outline-none focus:ring-2",
               wasteError
-                ? "border-red-400 focus:ring-red-400"
-                : "border-gray-300 focus:ring-blue-400",
+                ? "border-red-400 bg-red-50/50 focus:ring-red-400/20"
+                : "border-slate-300 bg-white focus:border-brand-500 focus:ring-brand-500/20",
             )}
           />
-          <span className="text-sm text-gray-500" aria-hidden="true">
+          <div className="flex h-11 items-center justify-center rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm font-mono font-semibold text-slate-600">
             %
-          </span>
+          </div>
         </div>
         {wasteError ? (
           <p
             id={`${wasteId}-error`}
             role="alert"
             data-testid="waste-factor-error"
-            className="text-sm text-red-600"
+            className="rounded-lg bg-red-50 p-2 text-xs font-medium text-red-600 border border-red-200"
           >
             {wasteError}
           </p>
         ) : (
-          <p id={`${wasteId}-hint`} className="text-xs text-gray-400">
+          <p id={`${wasteId}-hint`} className="text-[11px] font-mono text-slate-400">
             Permitted range: {WASTE_FACTOR_MIN} to {WASTE_FACTOR_MAX} %
           </p>
         )}
       </div>
 
       {/* Facade-subset selection (Req 6.7, 6.8, 6.9). */}
-      <fieldset className="flex flex-col gap-2" data-testid="facade-selection">
-        <legend className="text-sm font-medium text-gray-700">
-          Target facade(s)
+      <fieldset className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3" data-testid="facade-selection">
+        <legend className="text-xs font-bold uppercase tracking-wider text-slate-700 font-mono px-1">
+          Target Facade Scope
         </legend>
-        <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-gray-800">
-          <input
-            type="radio"
-            name={`${wasteId}-facade-mode`}
-            checked={wholePerimeterSelected}
-            onChange={selectWholePerimeter}
-            data-testid="facade-whole-perimeter"
-            className="h-4 w-4"
-          />
-          <span>Whole perimeter</span>
-        </label>
-        <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-gray-800">
-          <input
-            type="radio"
-            name={`${wasteId}-facade-mode`}
-            checked={!wholePerimeterSelected}
-            onChange={beginFacadeSubset}
-            disabled={!hasValidMeasurements}
-            data-testid="facade-subset-mode"
-            className="h-4 w-4"
-          />
-          <span>Selected sides only</span>
-        </label>
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          <label className={cn(
+            "flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+            wholePerimeterSelected
+              ? "border-brand-500 bg-brand-50/60 text-brand-900 font-semibold"
+              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+          )}>
+            <input
+              type="radio"
+              name={`${wasteId}-facade-mode`}
+              checked={wholePerimeterSelected}
+              onChange={selectWholePerimeter}
+              data-testid="facade-whole-perimeter"
+              className="h-4 w-4 text-brand-600 focus:ring-brand-500"
+            />
+            <span>Whole perimeter</span>
+          </label>
+          <label className={cn(
+            "flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+            !wholePerimeterSelected
+              ? "border-brand-500 bg-brand-50/60 text-brand-900 font-semibold"
+              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+            !hasValidMeasurements && "opacity-50 cursor-not-allowed"
+          )}>
+            <input
+              type="radio"
+              name={`${wasteId}-facade-mode`}
+              checked={!wholePerimeterSelected}
+              onChange={beginFacadeSubset}
+              disabled={!hasValidMeasurements}
+              data-testid="facade-subset-mode"
+              className="h-4 w-4 text-brand-600 focus:ring-brand-500"
+            />
+            <span>Selected sides only</span>
+          </label>
+        </div>
 
         {/* Per-side checkboxes, shown when targeting a subset (Req 6.7). */}
         {!wholePerimeterSelected && hasValidMeasurements ? (
-          <div className="flex flex-col gap-1 pl-6">
-            {sideLengths.map((length, index) => {
-              const checked =
-                selectedFacadeSideIndices?.includes(index) === true;
-              return (
-                <label
-                  key={index}
-                  className="flex min-h-[44px] cursor-pointer items-center justify-between gap-2 rounded-md bg-gray-50 px-2 py-1 text-sm text-gray-800"
-                >
-                  <span className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleSide(index)}
-                      data-testid={`facade-side-${index}`}
-                      className="h-4 w-4"
-                    />
-                    Side {index + 1}
-                  </span>
-                  <span className="text-gray-500">
-                    {formatMeasurement(length, decimalPlaces)} m
-                  </span>
-                </label>
-              );
-            })}
+          <div className="flex flex-col gap-1.5 mt-1 pt-2 border-t border-slate-200">
+            <span className="text-[11px] font-bold text-slate-500">Select active facade sides:</span>
+            <div className="grid grid-cols-1 gap-1 max-h-40 overflow-y-auto">
+              {sideLengths.map((length, index) => {
+                const checked =
+                  selectedFacadeSideIndices?.includes(index) === true;
+                return (
+                  <label
+                    key={index}
+                    className={cn(
+                      "flex min-h-[44px] cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs transition-colors",
+                      checked
+                        ? "border-brand-300 bg-brand-50 text-brand-900 font-medium"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    )}
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleSide(index)}
+                        data-testid={`facade-side-${index}`}
+                        className="h-4 w-4 rounded text-brand-600 focus:ring-brand-500"
+                      />
+                      <span>Side {index + 1}</span>
+                    </span>
+                    <span className="font-mono font-semibold text-slate-900">
+                      {formatMeasurement(length, decimalPlaces)} m
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
         ) : null}
       </fieldset>
@@ -403,14 +443,27 @@ interface ReadoutProps {
   label: string;
   value: string;
   testId: string;
+  icon?: string;
+  highlight?: boolean;
 }
 
 /** A single labeled measurement readout in the summary grid. */
-function Readout({ label, value, testId }: ReadoutProps) {
+function Readout({ label, value, testId, icon, highlight }: ReadoutProps) {
   return (
-    <div className="flex flex-col rounded-lg bg-gray-50 px-3 py-2">
-      <dt className="text-xs font-medium text-gray-500">{label}</dt>
-      <dd data-testid={testId} className="text-sm text-gray-900">
+    <div className={cn(
+      "flex flex-col rounded-xl border p-2.5 transition-all shadow-xs",
+      highlight
+        ? "border-brand-300 bg-brand-50/50 ring-1 ring-brand-400/20"
+        : "border-slate-200 bg-white"
+    )}>
+      <div className="flex items-center justify-between">
+        <dt className="text-[11px] font-bold uppercase tracking-wider text-slate-500 font-mono">{label}</dt>
+        {icon ? <span className="text-xs opacity-70">{icon}</span> : null}
+      </div>
+      <dd data-testid={testId} className={cn(
+        "mt-1 text-sm font-mono font-bold tracking-tight",
+        highlight ? "text-brand-700" : "text-slate-900"
+      )}>
         {value}
       </dd>
     </div>

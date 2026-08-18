@@ -259,33 +259,32 @@ export function AiCalculationCard({
       data-tool={result.tool}
       data-ok={result.ok}
       className={cn(
-        "rounded-lg border bg-white p-3 text-sm",
-        result.ok ? "border-gray-200" : "border-red-300 bg-red-50",
+        "rounded-xl border p-3 text-xs shadow-xs",
+        result.ok ? "border-slate-200 bg-white" : "border-red-300 bg-red-50/80",
         className,
       )}
     >
-      <header className="flex items-center justify-between gap-2">
-        <span className="font-semibold text-gray-800">{label}</span>
+      <header className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+        <span className="font-bold text-slate-800 font-mono text-[11px] uppercase tracking-wider">{label}</span>
         <span
           data-testid="ai-calculation-status"
           className={cn(
-            "rounded-full px-2 py-0.5 text-xs font-medium",
+            "rounded-md px-2 py-0.5 text-[10px] font-mono font-bold",
             result.ok
-              ? "bg-green-100 text-green-800"
-              : "bg-red-100 text-red-800",
+              ? "bg-emerald-100 text-emerald-800 border border-emerald-300/60"
+              : "bg-red-100 text-red-800 border border-red-300/60",
           )}
         >
-          {result.ok ? "Computed by calculator" : "Needs input"}
+          {result.ok ? "ENGINE COMPUTED" : "NEEDS INPUT"}
         </span>
       </header>
 
-      {/* Failure: surface the specific reason so the assistant can request the
-          missing/invalid value rather than fabricate one (Req 13.5). */}
+      {/* Failure reason */}
       {!result.ok ? (
         <p
           role="alert"
           data-testid="ai-calculation-error"
-          className="mt-2 text-red-700"
+          className="mt-2 text-xs font-medium text-red-700"
         >
           {result.error ?? "The tool could not complete."}
         </p>
@@ -295,14 +294,14 @@ export function AiCalculationCard({
       {quantities.length > 0 ? (
         <dl
           data-testid="ai-calculation-quantities"
-          className="mt-2 grid grid-cols-2 gap-2"
+          className="mt-2.5 grid grid-cols-2 gap-2"
         >
           {quantities.map((quantity) => (
-            <div key={quantity.key} className="flex flex-col">
-              <dt className="text-xs text-gray-500">{quantity.label}</dt>
+            <div key={quantity.key} className="flex flex-col rounded-lg bg-slate-50/70 p-2 border border-slate-200/60 shadow-xs">
+              <dt className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">{quantity.label}</dt>
               <dd
                 data-testid={`ai-quantity-${quantity.key}`}
-                className="font-semibold text-gray-800"
+                className="mt-0.5 font-mono font-bold text-slate-900"
               >
                 {quantity.value}
               </dd>
@@ -315,21 +314,21 @@ export function AiCalculationCard({
       {materialList.length > 0 ? (
         <ul
           data-testid="ai-calculation-material-list"
-          className="mt-3 flex flex-col gap-1 border-t border-gray-100 pt-2"
+          className="mt-2.5 flex flex-col gap-1 border-t border-slate-100 pt-2"
         >
           {materialList.map((line) => (
             <li
               key={line.id}
               data-testid={`ai-material-${line.id}`}
-              className="flex items-baseline justify-between gap-3"
+              className="flex items-baseline justify-between gap-3 text-[11px]"
             >
-              <span className="text-gray-800">
+              <span className="text-slate-800 font-medium">
                 {line.itemName}
                 {line.notes ? (
-                  <span className="ml-1 text-xs text-gray-500">({line.notes})</span>
+                  <span className="ml-1 text-[10px] font-mono text-slate-500">({line.notes})</span>
                 ) : null}
               </span>
-              <span className="whitespace-nowrap text-gray-700">
+              <span className="whitespace-nowrap font-mono font-bold text-slate-900">
                 {line.quantity} {line.unit}
               </span>
             </li>
@@ -341,10 +340,10 @@ export function AiCalculationCard({
       {warnings.length > 0 ? (
         <ul
           data-testid="ai-calculation-warnings"
-          className="mt-3 flex flex-col gap-1 border-t border-amber-200 pt-2 text-xs text-amber-800"
+          className="mt-2.5 flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 p-2 text-[11px] font-medium text-amber-900"
         >
           {warnings.map((warning, index) => (
-            <li key={index}>{warning}</li>
+            <li key={index}>⚠️ {warning}</li>
           ))}
         </ul>
       ) : null}

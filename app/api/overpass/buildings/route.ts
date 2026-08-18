@@ -31,6 +31,9 @@ import type {
 } from '@/lib/osm/osmToGeoJSON';
 import type { GeoJsonPolygon } from '@/lib/types';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 /**
  * Public Overpass mirrors (open-source, no key), tried in order. Server-side
  * only (Req 4.7). The main `overpass-api.de` host throttles aggressively, so we
@@ -39,6 +42,7 @@ import type { GeoJsonPolygon } from '@/lib/types';
  */
 const DEFAULT_OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
+  'https://overpass.osm.ch/api/interpreter',
   'https://overpass.openstreetmap.fr/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
@@ -100,6 +104,62 @@ export interface OverpassBuildingsResponse {
   /** Selected coordinate, echoed so the client retains it (Req 4.5). */
   lat: number;
   lon: number;
+}
+
+async function queryOverpassEndpoint(
+  endpoint: string,
+  query: string,
+  signal: AbortSignal,
+): Promise<OverpassElement[] | null> {
+  const headers = {
+    Accept: 'application/json',
+    'User-Agent': OVERPASS_USER_AGENT,
+  };
+
+  const attempts: Array<() => Promise<Response>> = [
+    () =>
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ data: query }).toString(),
+        cache: 'no-store',
+        signal,
+      }),
+    () =>
+      fetch(`${endpoint}?data=${encodeURIComponent(query)}`, {
+        method: 'GET',
+        headers,
+        cache: 'no-store',
+        signal,
+      }),
+  ];
+
+  for (const attempt of attempts) {
+    let upstream: Response;
+    try {
+      upstream = await attempt();
+    } catch (error) {
+      if (signal.aborted) throw error;
+      continue;
+    }
+
+    if (!upstream.ok) {
+      continue;
+    }
+
+    try {
+      const data = (await upstream.json()) as { elements?: OverpassElement[] };
+      return Array.isArray(data.elements) ? data.elements : [];
+    } catch (error) {
+      if (signal.aborted) throw error;
+      continue;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -169,6 +229,7 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   try {
     let elements: OverpassElement[] | null = null;
+    let sawEmptyResult = false;
 
     // Try each mirror in turn until one responds successfully. A non-success
     // status, parse failure, network error, or per-endpoint timeout simply
@@ -186,25 +247,16 @@ export async function GET(request: Request): Promise<NextResponse> {
       );
 
       try {
-        const upstream = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            // Required by the Overpass/OSM usage policy; without it the main
-            // mirror rejects the request with HTTP 406.
-            'User-Agent': OVERPASS_USER_AGENT,
-          },
-          body: `data=${encodeURIComponent(query)}`,
-          signal: perEndpointController.signal,
-        });
-
-        if (!upstream.ok) {
-          continue; // throttled / error from this mirror: try the next one
+        elements = await queryOverpassEndpoint(
+          endpoint,
+          query,
+          perEndpointController.signal,
+        );
+        if (elements !== null && elements.length > 0) break; // success: stop trying mirrors
+        if (elements !== null) {
+          sawEmptyResult = true;
+          elements = null;
         }
-
-        const data = (await upstream.json()) as { elements?: OverpassElement[] };
-        elements = Array.isArray(data.elements) ? data.elements : [];
-        break; // success: stop trying mirrors
       } catch {
         // Network error or per-endpoint/overall timeout: try the next mirror.
         continue;
@@ -217,10 +269,14 @@ export async function GET(request: Request): Promise<NextResponse> {
     // Every mirror failed: surface the error signal so the client falls back to
     // manual drawing while retaining the coordinate (Req 4.5).
     if (elements === null) {
-      return NextResponse.json(
-        { buildings: [], error: 'overpass-failed', lat, lon },
-        { status: 200 },
-      );
+      if (sawEmptyResult) {
+        elements = [];
+      } else {
+        return NextResponse.json(
+          { buildings: [], error: 'overpass-failed', lat, lon },
+          { status: 200 },
+        );
+      }
     }
 
     // Keep only the building ways and relations (Overpass may also return node

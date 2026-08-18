@@ -9,7 +9,7 @@
  * /sw.js so its scope covers the whole origin ("/").
  */
 
-const CACHE_NAME = "stillas-cache-v1";
+const CACHE_NAME = "stillas-cache-v2";
 const APP_SHELL = ["/", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -48,6 +48,9 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) {
+    return;
+  }
+  if (url.pathname.startsWith("/api/")) {
     return;
   }
 

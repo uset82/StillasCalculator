@@ -331,93 +331,125 @@ export function ScaffoldCalculatorForm({
         handleCalculate();
       }}
     >
-      <fieldset className="flex flex-col gap-4" disabled={disabled}>
-        <legend className="text-sm font-semibold text-gray-700">
-          Working parameters
-        </legend>
+      <fieldset className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/50 p-3" disabled={disabled}>
+        <div className="flex items-center justify-between">
+          <legend className="text-xs font-bold uppercase tracking-wider text-slate-700 font-mono px-1">
+            Working Parameters & Dimensions
+          </legend>
+          <span className="text-[10px] font-mono text-slate-400">EN 12811 / NS 9700</span>
+        </div>
 
         {/* Derived Scaffold_Length (read-only); included in the required check. */}
         <ScaffoldLengthReadout meters={values.scaffoldLengthMeters} />
 
-        {FIELD_CONFIGS.map((config) => {
-          const error = fieldErrors[config.field];
-          const errorId = `${config.field}-error`;
-          const hintId = `${config.field}-hint`;
-          return (
-            <div key={config.field} className="flex flex-col gap-1">
-              <label
-                htmlFor={config.field}
-                className="text-sm font-medium text-gray-700"
+        {/* Quick storey height presets */}
+        <div className="flex flex-col gap-1.5 pt-1">
+          <span className="text-[11px] font-bold text-slate-500">Quick Working Height Presets:</span>
+          <div className="grid grid-cols-4 gap-1.5">
+            {[
+              { label: "1 Story", height: 3.0 },
+              { label: "2 Stories", height: 6.0 },
+              { label: "3 Stories", height: 9.0 },
+              { label: "4 Stories", height: 12.0 },
+            ].map(({ label, height }) => (
+              <button
+                key={height}
+                type="button"
+                onClick={() => {
+                  const cfg = FIELD_CONFIGS.find((c) => c.field === "workingHeightMeters");
+                  if (cfg) handleChange(cfg, String(height));
+                }}
+                className="flex flex-col items-center justify-center rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center transition-colors hover:border-brand-300 hover:bg-brand-50/50 shadow-xs"
               >
-                {config.label}
-                {!config.requiredForCalculation && (
-                  <span className="ml-1 text-xs font-normal text-gray-400">
-                    (optional)
-                  </span>
-                )}
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  id={config.field}
-                  name={config.field}
-                  type="number"
-                  inputMode="decimal"
-                  step="any"
-                  min={config.min}
-                  max={config.max}
-                  value={drafts[config.field]}
-                  onChange={(event) => handleChange(config, event.target.value)}
-                  aria-invalid={error ? true : undefined}
-                  aria-describedby={error ? errorId : hintId}
-                  data-testid={`input-${config.field}`}
-                  className={cn(
-                    "min-h-[44px] w-full rounded-lg border px-3 py-2 text-base text-gray-900 shadow-sm focus:outline-none focus:ring-2",
-                    error
-                      ? "border-red-400 focus:ring-red-400"
-                      : "border-gray-300 focus:ring-blue-400",
-                  )}
-                />
-                <span className="text-sm text-gray-500" aria-hidden="true">
-                  m
-                </span>
-              </div>
-              {error ? (
-                <p
-                  id={errorId}
-                  role="alert"
-                  data-testid={`error-${config.field}`}
-                  className="text-sm text-red-600"
+                <span className="text-[10px] text-slate-500 font-medium">{label}</span>
+                <span className="font-mono text-xs font-bold text-slate-900">{height}m</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 pt-2 border-t border-slate-200">
+          {FIELD_CONFIGS.map((config) => {
+            const error = fieldErrors[config.field];
+            const errorId = `${config.field}-error`;
+            const hintId = `${config.field}-hint`;
+            return (
+              <div key={config.field} className="flex flex-col gap-1">
+                <label
+                  htmlFor={config.field}
+                  className="text-[11px] font-bold uppercase tracking-wider text-slate-600 font-mono"
                 >
-                  {error}
-                </p>
-              ) : (
-                <p id={hintId} className="text-xs text-gray-400">
-                  Permitted range: {config.min} to {config.max} m
-                </p>
-              )}
-            </div>
-          );
-        })}
+                  {config.label}
+                  {!config.requiredForCalculation && (
+                    <span className="ml-1 text-[10px] font-normal text-slate-400">
+                      (opt)
+                    </span>
+                  )}
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    id={config.field}
+                    name={config.field}
+                    type="number"
+                    inputMode="decimal"
+                    step="any"
+                    min={config.min}
+                    max={config.max}
+                    value={drafts[config.field]}
+                    onChange={(event) => handleChange(config, event.target.value)}
+                    aria-invalid={error ? true : undefined}
+                    aria-describedby={error ? errorId : hintId}
+                    data-testid={`input-${config.field}`}
+                    className={cn(
+                      "min-h-[44px] w-full rounded-xl border px-3 py-2 pr-8 text-xs font-mono font-medium shadow-xs focus:outline-none focus:ring-2",
+                      error
+                        ? "border-red-400 bg-red-50 text-red-900 focus:ring-red-400/20"
+                        : "border-slate-300 bg-white text-slate-900 focus:border-brand-500 focus:ring-brand-500/20",
+                    )}
+                  />
+                  <span className="pointer-events-none absolute right-2.5 text-xs font-mono font-semibold text-slate-400">
+                    m
+                  </span>
+                </div>
+                {error ? (
+                  <p
+                    id={errorId}
+                    role="alert"
+                    data-testid={`error-${config.field}`}
+                    className="text-[11px] font-medium text-red-600"
+                  >
+                    {error}
+                  </p>
+                ) : (
+                  <p id={hintId} className="text-[10px] font-mono text-slate-400">
+                    Range: {config.min}–{config.max} m
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </fieldset>
 
       {/* Missing-required-value message that blocks calculation (Req 8.4). */}
       {missingMessage && (
-        <p
+        <div
           role="alert"
           data-testid="missing-required-message"
-          className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+          className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700 shadow-xs"
         >
           {missingMessage}
-        </p>
+        </div>
       )}
 
       <button
         type="submit"
         disabled={disabled}
         data-testid="calculate-button"
-        className="min-h-[44px] rounded-lg bg-blue-600 px-4 py-2 text-base font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:cursor-not-allowed disabled:bg-gray-300"
+        className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-white shadow-md transition-all hover:bg-brand-700 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
       >
-        Calculate materials
+        <span aria-hidden="true" className="text-base">⚡</span>
+        <span>Calculate materials</span>
       </button>
     </form>
   );
@@ -445,13 +477,22 @@ function ScaffoldLengthReadout({ meters }: { meters: number | null }): ReactNode
   const isSet = meters !== null && meters !== undefined;
   return (
     <div
-      className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2"
+      className={cn(
+        "flex items-center justify-between rounded-xl border p-2.5 transition-colors",
+        isSet ? "border-brand-200 bg-brand-50/50" : "border-slate-200 bg-white"
+      )}
       data-testid="scaffold-length-readout"
     >
-      <span className="text-sm font-medium text-gray-700">
-        {SCAFFOLD_LENGTH_LABEL}
-      </span>
-      <span className="text-sm text-gray-900">
+      <div className="flex items-center gap-2">
+        <span className="text-xs">📐</span>
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-700 font-mono">
+          {SCAFFOLD_LENGTH_LABEL}
+        </span>
+      </div>
+      <span className={cn(
+        "text-xs font-mono font-bold",
+        isSet ? "text-brand-800 text-sm" : "text-slate-400 font-normal italic"
+      )}>
         {isSet ? `${meters} m` : "Not set — draw a perimeter first"}
       </span>
     </div>

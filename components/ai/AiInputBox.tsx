@@ -8,8 +8,7 @@ import {
 } from "@/lib/ai/chatClient";
 
 /**
- * Joins conditional class names, dropping falsy values. Kept local to avoid a
- * dependency, mirroring the other presentation components.
+ * Joins conditional class names, dropping falsy values.
  */
 function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(" ");
@@ -42,11 +41,6 @@ export interface AiInputBoxProps {
  * (via `maxLength`), and a send is additionally rejected if the content somehow
  * exceeds the bound, so an over-length message never leaves the browser
  * (Req 12.1). A live character counter shows progress toward the limit.
- *
- * While a request is in flight the textarea and send button are disabled so the
- * user cannot send another message until the current one settles (Req 12.3);
- * the same applies when the assistant is unavailable (Req 12.7). Pressing Enter
- * (without Shift) sends; Shift+Enter inserts a newline.
  */
 export function AiInputBox({
   onSend,
@@ -62,9 +56,6 @@ export function AiInputBox({
   const canSend = !blocked && trimmed.length > 0 && withinLimit;
 
   function submit(): void {
-    // Guard against sending while blocked, empty, or over the bound (Req 12.1,
-    // 12.3). The bound check is defensive — `maxLength` already prevents typing
-    // past the limit.
     if (!canSend) {
       return;
     }
@@ -78,7 +69,6 @@ export function AiInputBox({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
-    // Enter sends; Shift+Enter inserts a newline.
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       submit();
@@ -91,7 +81,7 @@ export function AiInputBox({
     <form
       data-testid="ai-input-box"
       aria-label="Send a message to the assistant"
-      className={cn("flex flex-col gap-2", className)}
+      className={cn("flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-2.5 shadow-xs", className)}
       onSubmit={handleSubmit}
     >
       <label htmlFor="ai-input-textarea" className="sr-only">
@@ -103,20 +93,19 @@ export function AiInputBox({
         value={value}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={handleKeyDown}
-        // Hard cap typed input at the 2000-character bound (Req 12.1).
         maxLength={MAX_MESSAGE_LENGTH}
         disabled={blocked}
         rows={2}
         placeholder={
           disabled
             ? "The assistant is unavailable."
-            : "Ask the assistant to help with your scaffold plan..."
+            : "Ask the copilot: adjust height, add guardrails, check anchors..."
         }
         aria-describedby={counterId}
         className={cn(
-          "min-h-[44px] w-full resize-y rounded-lg border border-gray-300 px-3 py-2 text-base text-gray-900 shadow-sm",
-          "focus:outline-none focus:ring-2 focus:ring-blue-400",
-          "disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400",
+          "min-h-[44px] w-full resize-y rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-900 shadow-inner",
+          "focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20",
+          "disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400",
         )}
       />
 
@@ -125,8 +114,8 @@ export function AiInputBox({
           id={counterId}
           data-testid="ai-input-counter"
           className={cn(
-            "text-xs",
-            withinLimit ? "text-gray-400" : "text-red-600",
+            "text-[10px] font-mono",
+            withinLimit ? "text-slate-400" : "text-red-600 font-bold",
           )}
         >
           {value.length} / {MAX_MESSAGE_LENGTH}
@@ -136,13 +125,14 @@ export function AiInputBox({
           disabled={!canSend}
           data-testid="ai-send-button"
           className={cn(
-            "min-h-[44px] rounded-lg px-4 py-2 text-base font-semibold text-white shadow-sm",
-            "focus:outline-none focus:ring-2 focus:ring-blue-400",
-            "disabled:cursor-not-allowed disabled:bg-gray-300",
-            "bg-blue-600 hover:bg-blue-700",
+            "flex min-h-[38px] items-center justify-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider text-white shadow-xs transition-all",
+            "focus:outline-none focus:ring-2 focus:ring-brand-400",
+            "disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none",
+            "bg-brand-600 hover:bg-brand-700 active:scale-[0.98]",
           )}
         >
-          {pending ? "Sending..." : "Send"}
+          <span>{pending ? "Sending…" : "Send"}</span>
+          <span aria-hidden="true">➤</span>
         </button>
       </div>
     </form>

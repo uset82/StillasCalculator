@@ -168,6 +168,12 @@ function MarkdownMessage({ content }: { content: string }) {
  * conversation (Req 12.1). User, assistant, and system messages are shown in
  * order of their `timestamp`, with user messages aligned to the right and
  * assistant/system messages to the left. The deterministic tool-call results
+
+/**
+ * `AiMessageList` — the scrollable, chronological transcript of the AI
+ * conversation (Req 12.1). User, assistant, and system messages are shown in
+ * order of their `timestamp`, with user messages aligned to the right and
+ * assistant/system messages to the left. The deterministic tool-call results
  * for the latest turn are rendered as calculation cards after the messages so
  * the engine-computed quantities are visible alongside the reply (Req 13.1).
  *
@@ -183,7 +189,6 @@ export function AiMessageList({
   const ordered = sortMessagesChronologically(messages);
   const endRef = useRef<HTMLDivElement | null>(null);
 
-  // Keep the newest message in view as the transcript grows.
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages, toolResults]);
@@ -195,16 +200,18 @@ export function AiMessageList({
       data-testid="ai-message-list"
       aria-label="Assistant conversation"
       aria-live="polite"
-      className={cn("flex flex-col gap-3 overflow-y-auto", className)}
+      className={cn("flex flex-col gap-3 overflow-y-auto pr-1", className)}
     >
       {isEmpty ? (
-        <p
-          data-testid="ai-message-list-empty"
-          className="text-sm text-gray-500"
-        >
-          No messages yet. Ask the assistant to help complete your scaffold
-          plan.
-        </p>
+        <div className="flex flex-col items-center justify-center p-6 text-center">
+          <span className="text-2xl mb-1.5 opacity-80">🤖</span>
+          <p
+            data-testid="ai-message-list-empty"
+            className="text-xs font-mono text-slate-500"
+          >
+            No messages yet. Ask the assistant to help plan your scaffolding.
+          </p>
+        </div>
       ) : null}
 
       <ol className="flex flex-col gap-3">
@@ -220,15 +227,15 @@ export function AiMessageList({
                 isUser ? "items-end" : "items-start",
               )}
             >
-              <span className="px-1 text-xs text-gray-400">
+              <span className="px-1 mb-0.5 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
                 {roleLabel(message.role)}
               </span>
               <div
                 className={cn(
-                  "max-w-[85%] break-words rounded-2xl px-3 py-2 text-sm",
+                  "max-w-[88%] break-words px-3.5 py-2.5 text-xs shadow-xs leading-relaxed",
                   isUser
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-100 text-gray-800",
+                    ? "rounded-2xl rounded-tr-xs bg-brand-600 text-white font-medium shadow-sm"
+                    : "rounded-2xl rounded-tl-xs border border-slate-200/90 bg-slate-50 text-slate-900",
                 )}
               >
                 <MarkdownMessage content={message.content} />
@@ -242,7 +249,7 @@ export function AiMessageList({
       {toolResults.length > 0 ? (
         <div
           data-testid="ai-tool-results"
-          className="flex flex-col gap-2"
+          className="flex flex-col gap-2 pt-1 border-t border-slate-100"
           aria-label="Calculation results"
         >
           {toolResults.map((result, index) => (

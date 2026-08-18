@@ -181,10 +181,13 @@ export function ScaffoldSystemSelector({
     >
       {/* System list (Req 7.1). Radio group so exactly one system is selected. */}
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-sm font-semibold text-gray-700">
-          Scaffold system
-        </legend>
-        <div role="radiogroup" aria-label="Scaffold system" className="flex flex-col gap-1">
+        <div className="flex items-center justify-between mb-1">
+          <legend className="text-xs font-bold uppercase tracking-wider text-slate-700 font-mono">
+            Scaffold System Library
+          </legend>
+          <span className="text-[10px] font-mono text-slate-400">5 SYSTEMS</span>
+        </div>
+        <div role="radiogroup" aria-label="Scaffold system" className="grid grid-cols-1 gap-2">
           {systems.map((system) => {
             const inputId = `${groupId}-system-${system.id}`;
             const isSelected = system.id === selectedSystemId;
@@ -194,27 +197,42 @@ export function ScaffoldSystemSelector({
                 htmlFor={inputId}
                 data-testid={`scaffold-system-option-${system.id}`}
                 className={cn(
-                  "flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm",
+                  "flex min-h-11 cursor-pointer items-center justify-between rounded-xl border p-3 text-xs transition-all shadow-xs",
                   isSelected
-                    ? "border-blue-500 bg-blue-50 text-blue-900"
-                    : "border-gray-200 bg-white text-gray-800 hover:border-gray-300"
+                    ? "border-brand-500 bg-brand-50/70 text-brand-950 font-medium ring-1 ring-brand-500/20"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50/60"
                 )}
               >
-                <input
-                  id={inputId}
-                  type="radio"
-                  name={`${groupId}-scaffold-system`}
-                  value={system.id}
-                  checked={isSelected}
-                  onChange={() => onSelectSystem(system.id)}
-                  className="h-4 w-4"
-                />
-                <span className="flex-1">{system.displayName}</span>
+                <div className="flex items-center gap-3">
+                  <input
+                    id={inputId}
+                    type="radio"
+                    name={`${groupId}-scaffold-system`}
+                    value={system.id}
+                    checked={isSelected}
+                    onChange={() => onSelectSystem(system.id)}
+                    className="h-4 w-4 text-brand-600 focus:ring-brand-500"
+                  />
+                  <div className="flex flex-col">
+                    <span className="font-semibold text-slate-900">{system.displayName}</span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      Std: {system.defaultBayLengthMeters}m bay × {system.defaultLiftHeightMeters}m lift
+                    </span>
+                  </div>
+                </div>
                 {system.isPlaceholder ? (
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                  <span className="rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-mono font-semibold text-amber-800">
                     Placeholder
                   </span>
-                ) : null}
+                ) : system.isCustom ? (
+                  <span className="rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 text-[10px] font-mono font-semibold text-brand-700">
+                    Custom
+                  </span>
+                ) : (
+                  <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-mono font-medium text-slate-600">
+                    Standard
+                  </span>
+                )}
               </label>
             );
           })}
@@ -223,40 +241,42 @@ export function ScaffoldSystemSelector({
 
       {/* Non-certified placeholder notice (Req 7.4). */}
       {selectedSystem?.isPlaceholder ? (
-        <p
+        <div
           role="note"
           data-testid="placeholder-notice"
-          className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+          className="rounded-xl border border-amber-300 bg-amber-50/80 p-3 text-xs text-amber-900 shadow-xs"
         >
-          The dimensions for {selectedSystem.displayName} are non-certified
-          placeholder values. Confirm them against the manufacturer
-          specification before relying on the estimate.
-        </p>
+          <div className="flex items-start gap-2">
+            <span className="text-sm">⚠️</span>
+            <p className="font-medium leading-relaxed">
+              The dimensions for {selectedSystem.displayName} are non-certified placeholder values. Confirm them against the manufacturer specification before relying on the estimate.
+            </p>
+          </div>
+        </div>
       ) : null}
 
-      {/* Dimension editor (Req 7.3). Shown once a system is selected so the
-          fields have a meaningful context (and defaults loaded by Req 7.2). */}
+      {/* Dimension editor (Req 7.3). */}
       {selectedSystem ? (
-        <fieldset className="flex flex-col gap-3">
-          <legend className="mb-1 text-sm font-semibold text-gray-700">
-            Dimensions (meters)
+        <fieldset className="flex flex-col gap-2.5 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+          <legend className="text-xs font-bold uppercase tracking-wider text-slate-700 font-mono px-1">
+            System Module Dimensions
           </legend>
-          {DIMENSION_FIELDS.map(({ field, label }) => (
-            <DimensionInput
-              key={field}
-              field={field}
-              label={label}
-              value={dimensionValues[field]}
-              // Custom Dimensions require every value; surface a message when a
-              // field is empty or the parent flagged it missing (Req 7.5).
-              required={isCustom}
-              externallyMissing={missingDimensions?.includes(field) === true}
-              onCommit={onChangeDimension}
-            />
-          ))}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {DIMENSION_FIELDS.map(({ field, label }) => (
+              <DimensionInput
+                key={field}
+                field={field}
+                label={label}
+                value={dimensionValues[field]}
+                required={isCustom}
+                externallyMissing={missingDimensions?.includes(field) === true}
+                onCommit={onChangeDimension}
+              />
+            ))}
+          </div>
         </fieldset>
       ) : (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-slate-500 font-mono">
           Select a scaffold system to edit its dimensions.
         </p>
       )}
@@ -280,15 +300,6 @@ interface DimensionInputProps {
   onCommit: (field: DimensionField, value: number) => void;
 }
 
-/**
- * A single editable scaffold dimension with inline validation (Req 7.3).
- *
- * The input keeps its own draft text so the user can type freely; on every
- * change it validates against the system-editor range and either commits the
- * value via {@link DimensionInputProps.onCommit} or shows a message without
- * committing. The draft re-syncs to the incoming `value` whenever the prop
- * changes (e.g. after selecting a system loads its defaults, Req 7.2).
- */
 function DimensionInput({
   field,
   label,
@@ -302,10 +313,6 @@ function DimensionInput({
   const [draft, setDraft] = useState<string>(value === null ? "" : String(value));
   const [localError, setLocalError] = useState<string | null>(null);
 
-  // Re-sync the draft to the authoritative value (e.g. defaults loaded on
-  // system selection, or an accepted update from the controller). Clearing the
-  // local error here avoids showing a stale message after a valid external
-  // change.
   useEffect(() => {
     setDraft(value === null ? "" : String(value));
     setLocalError(null);
@@ -322,14 +329,9 @@ function DimensionInput({
       return;
     }
 
-    // Empty input: only surface a message when the field is required (Custom
-    // Dimensions). Otherwise leave it blank without an error (Req 7.5).
     setLocalError(result.reason === "missing" && !required ? null : result.message);
   };
 
-  // A required field that is empty (no draft, no stored value) is missing — as
-  // is any field the parent explicitly flagged. This drives the Custom
-  // Dimensions required-value messaging (Req 7.5).
   const isMissing =
     (required && draft.trim() === "" && value === null) || externallyMissing;
   const message: ReactNode =
@@ -337,34 +339,39 @@ function DimensionInput({
 
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={inputId} className="text-sm text-gray-700">
+      <label htmlFor={inputId} className="text-[11px] font-bold uppercase tracking-wider text-slate-600 font-mono">
         {label}
       </label>
-      <input
-        id={inputId}
-        type="number"
-        inputMode="decimal"
-        min={DIMENSION_MIN_EXCLUSIVE}
-        max={DIMENSION_MAX}
-        step="0.01"
-        value={draft}
-        onChange={handleChange}
-        aria-invalid={message != null}
-        aria-describedby={message != null ? errorId : undefined}
-        data-testid={`dimension-input-${field}`}
-        className={cn(
-          "min-h-11 rounded-lg border px-3 py-2 text-sm",
-          message != null
-            ? "border-red-400 bg-red-50 text-red-900"
-            : "border-gray-300 bg-white text-gray-900"
-        )}
-      />
+      <div className="relative flex items-center">
+        <input
+          id={inputId}
+          type="number"
+          inputMode="decimal"
+          min={DIMENSION_MIN_EXCLUSIVE}
+          max={DIMENSION_MAX}
+          step="0.01"
+          value={draft}
+          onChange={handleChange}
+          aria-invalid={message != null}
+          aria-describedby={message != null ? errorId : undefined}
+          data-testid={`dimension-input-${field}`}
+          className={cn(
+            "min-h-11 w-full rounded-xl border px-3 py-2 pr-8 text-xs font-mono font-medium shadow-xs focus:outline-none focus:ring-2",
+            message != null
+              ? "border-red-400 bg-red-50 text-red-900 focus:ring-red-400/20"
+              : "border-slate-300 bg-white text-slate-900 focus:border-brand-500 focus:ring-brand-500/20"
+          )}
+        />
+        <span className="pointer-events-none absolute right-2.5 text-xs font-mono font-semibold text-slate-400">
+          m
+        </span>
+      </div>
       {message != null ? (
         <p
           id={errorId}
           role="alert"
           data-testid={`dimension-error-${field}`}
-          className="text-xs text-red-600"
+          className="text-[11px] font-medium text-red-600"
         >
           {message}
         </p>

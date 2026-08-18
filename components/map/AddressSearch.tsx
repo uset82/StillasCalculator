@@ -222,32 +222,51 @@ export function AddressSearch({
   return (
     <div
       data-testid="address-search"
-      className={cn("relative flex flex-col gap-1", className)}
+      className={cn("relative flex flex-col gap-1.5", className)}
     >
       <label htmlFor={inputId} className="sr-only">
         {label}
       </label>
-      <input
-        id={inputId}
-        type="text"
-        role="combobox"
-        autoComplete="off"
-        spellCheck={false}
-        value={query}
-        placeholder={placeholder}
-        onChange={handleInputChange}
-        onKeyDown={handleKeyDown}
-        aria-label={label}
-        aria-expanded={hasSuggestions}
-        aria-controls={listboxId}
-        aria-autocomplete="list"
-        aria-activedescendant={
-          activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined
-        }
-        aria-describedby={statusMessage ? statusId : undefined}
-        data-testid="address-search-input"
-        className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-      />
+      <div className="relative flex items-center">
+        <span className="pointer-events-none absolute left-3.5 text-slate-400 text-sm" aria-hidden="true">
+          🔍
+        </span>
+        <input
+          id={inputId}
+          type="text"
+          role="combobox"
+          autoComplete="off"
+          spellCheck={false}
+          value={query}
+          placeholder={placeholder}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
+          aria-label={label}
+          aria-expanded={hasSuggestions}
+          aria-controls={listboxId}
+          aria-autocomplete="list"
+          aria-activedescendant={
+            activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined
+          }
+          aria-describedby={statusMessage ? statusId : undefined}
+          data-testid="address-search-input"
+          className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-900/90 pl-10 pr-10 py-2.5 text-sm font-medium text-white placeholder-slate-400 shadow-hud backdrop-blur-md transition-all focus:border-brand-500 focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+        />
+        {query ? (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setSuggestions([]);
+              setStatusMessage(null);
+            }}
+            aria-label="Clear search"
+            className="absolute right-3 flex h-6 w-6 items-center justify-center rounded-full text-xs text-slate-400 hover:bg-slate-800 hover:text-white"
+          >
+            ✕
+          </button>
+        ) : null}
+      </div>
 
       {/* Selectable suggestions list, up to the first 5 (Req 3.3). */}
       {hasSuggestions ? (
@@ -256,7 +275,7 @@ export function AddressSearch({
           role="listbox"
           aria-label="Address suggestions"
           data-testid="address-search-suggestions"
-          className="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+          className="absolute left-0 right-0 top-full z-40 mt-1.5 max-h-72 overflow-auto rounded-xl border border-slate-700 bg-slate-900/95 py-1.5 shadow-2xl backdrop-blur-md divide-y divide-slate-800/60"
         >
           {suggestions.map((result, index) => {
             const optionId = `${listboxId}-option-${index}`;
@@ -270,8 +289,6 @@ export function AddressSearch({
               >
                 <button
                   type="button"
-                  // `onMouseDown` (not `onClick`) so selection fires before the
-                  // input's blur can collapse the list.
                   onMouseDown={(event) => {
                     event.preventDefault();
                     selectSuggestion(result);
@@ -279,11 +296,19 @@ export function AddressSearch({
                   onMouseEnter={() => setActiveIndex(index)}
                   data-testid={`address-search-suggestion-${index}`}
                   className={cn(
-                    "flex min-h-11 w-full items-center px-3 py-2 text-left text-sm text-gray-900",
-                    isActive ? "bg-blue-50 text-blue-900" : "hover:bg-gray-50",
+                    "flex min-h-11 w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left text-sm transition-colors",
+                    isActive
+                      ? "bg-brand-600/20 text-brand-300 font-medium"
+                      : "text-slate-200 hover:bg-slate-800/80",
                   )}
                 >
-                  {result.label}
+                  <div className="flex items-center gap-2.5 overflow-hidden">
+                    <span className="text-sm opacity-70" aria-hidden="true">📍</span>
+                    <span className="truncate">{result.label}</span>
+                  </div>
+                  <span className="hidden sm:inline-block font-mono text-[10px] text-slate-400 shrink-0">
+                    {result.lat.toFixed(3)}, {result.lon.toFixed(3)}
+                  </span>
                 </button>
               </li>
             );
@@ -293,15 +318,15 @@ export function AddressSearch({
 
       {/* No-match / rate-limit / error status message (Req 3.7). */}
       {statusMessage ? (
-        <p
+        <div
           id={statusId}
           role="status"
           aria-live="polite"
           data-testid="address-search-message"
-          className="text-xs text-gray-600"
+          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-300 shadow-sm"
         >
           {statusMessage}
-        </p>
+        </div>
       ) : null}
     </div>
   );

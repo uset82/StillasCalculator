@@ -462,47 +462,66 @@ export function PolygonEditor({
   return (
     <div
       data-testid="polygon-editor"
-      className={cn("flex flex-col gap-3", className)}
+      className={cn("flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/50 p-3", className)}
       aria-label="Perimeter editor"
     >
-      <div className="flex flex-wrap gap-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-700 font-mono">
+          Perimeter Tools
+        </span>
+        <span className="rounded bg-slate-200 px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-700">
+          {vertexCount} {vertexCount === 1 ? "VERTEX" : "VERTICES"}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <button
           type="button"
           onClick={handleStartDraw}
           disabled={disabled || drawing}
           aria-pressed={drawing}
           data-testid="polygon-editor-draw"
-          className="min-h-[44px] rounded-lg bg-blue-600 px-4 py-2 text-base font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:cursor-not-allowed disabled:bg-gray-300"
+          className={cn(
+            "flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wider transition-all shadow-sm focus:outline-none focus:ring-2",
+            drawing
+              ? "bg-amber-500 text-slate-950 font-extrabold ring-2 ring-amber-400 animate-pulse"
+              : "bg-brand-600 text-white hover:bg-brand-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+          )}
         >
-          {drawing ? "Drawing…" : "Draw perimeter"}
+          <span aria-hidden="true">{drawing ? "✏️" : "📐"}</span>
+          <span>{drawing ? "Drawing…" : "Draw"}</span>
         </button>
+
         <button
           type="button"
           onClick={handleComplete}
           disabled={disabled || vertexCount === 0}
           data-testid="polygon-editor-complete"
-          className="min-h-[44px] rounded-lg border border-blue-600 px-4 py-2 text-base font-semibold text-blue-700 shadow-sm hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400"
+          className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-brand-500 bg-white px-3 py-2 text-xs font-bold uppercase tracking-wider text-brand-700 shadow-sm hover:bg-brand-50 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-brand-400 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
         >
-          Complete perimeter
+          <span aria-hidden="true">✓</span>
+          <span>Complete</span>
         </button>
+
         <button
           type="button"
           onClick={handleReset}
           disabled={disabled || (vertexCount === 0 && !message)}
           data-testid="polygon-editor-reset"
-          className="min-h-[44px] rounded-lg border border-gray-300 px-4 py-2 text-base font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:cursor-not-allowed disabled:text-gray-400"
+          className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-700 shadow-sm hover:bg-slate-50 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
         >
-          Reset
+          <span aria-hidden="true">↺</span>
+          <span>Reset</span>
         </button>
       </div>
 
       {/* Instructional status: how many vertices are placed and what to do. */}
-      <p data-testid="polygon-editor-status" className="text-sm text-gray-600">
+      <p data-testid="polygon-editor-status" className="text-xs text-slate-600 font-medium leading-relaxed">
         {drawing
           ? `Tap the map to place vertices (${vertexCount} placed). Drag a vertex to move it.`
           : vertexCount > 0
             ? `${vertexCount} vertices placed. Drag a vertex to adjust, or complete the perimeter.`
-            : "Tap “Draw perimeter”, then tap the map to place at least 3 vertices."}
+            : "Tap “Draw”, then tap the map to place at least 3 vertices."}
       </p>
 
       {/* Validation message for the ≥3-vertex (Req 5.7) and crossing (Req 5.8) rules. */}
@@ -510,7 +529,7 @@ export function PolygonEditor({
         <p
           role="alert"
           data-testid="polygon-editor-message"
-          className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+          className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs font-medium text-red-700 shadow-xs"
         >
           {message}
         </p>

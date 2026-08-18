@@ -23,6 +23,9 @@ import { ScaffoldCalculatorForm } from "@/components/scaffold/ScaffoldCalculator
 import { MaterialList } from "@/components/scaffold/MaterialList";
 import { ExportButtons } from "@/components/scaffold/ExportButtons";
 import { AiChatPanel } from "@/components/ai/AiChatPanel";
+import { ProductIntroModal } from "@/components/intro/ProductIntroModal";
+import { StudioHeroWelcome } from "@/components/intro/StudioHeroWelcome";
+import { LandingPage } from "@/components/landing/LandingPage";
 
 import { projectStateController } from "@/lib/state/projectStateController";
 import { calculateScaffoldMaterials } from "@/lib/scaffold/scaffoldCalculator";
@@ -177,6 +180,8 @@ export function StillasCalculatorApp() {
   const [editablePolygon, setEditablePolygon] =
     useState<GeoJsonPolygon | null>(null);
   const [footprintMessage, setFootprintMessage] = useState<string | null>(null);
+  const [introOpen, setIntroOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"landing" | "studio">("landing");
 
   // Calculation error surfaced when the engine rejects the current inputs.
   const [calcError, setCalcError] = useState<string | null>(null);
@@ -539,11 +544,27 @@ export function StillasCalculatorApp() {
 
   const mapSlot = (
     <MapView marker={marker} onMapReady={setMapInstance} className="h-full w-full">
-      {/* Address search overlays the map; offset from the mobile full-screen
-          toggle (which sits at top-left). On selection it centers the map and
-          places the single marker (Req 3.4, 3.5). */}
-      <div className="absolute left-14 right-2 top-2 z-20 md:left-2 md:max-w-md">
+      {/* Address search overlays the map with quick-jump city chips */}
+      <div className="absolute left-14 right-2 top-2 z-20 md:left-3 md:max-w-md flex flex-col gap-2">
         <AddressSearch onSelectAddress={handleSelectAddress} />
+        <div className="hidden sm:flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] font-mono text-slate-700 font-bold bg-white/90 px-1.5 py-0.5 rounded backdrop-blur-sm shadow-xs">QUICK:</span>
+          {[
+            { label: "Oslo", lat: 59.9139, lon: 10.7522 },
+            { label: "Bergen", lat: 60.3913, lon: 5.3221 },
+            { label: "Trondheim", lat: 63.4305, lon: 10.3951 },
+            { label: "Stavanger", lat: 58.9700, lon: 5.7331 },
+          ].map((city) => (
+            <button
+              key={city.label}
+              type="button"
+              onClick={() => handleSelectAddress({ label: `${city.label}, Norway`, lat: city.lat, lon: city.lon })}
+              className="rounded-lg bg-slate-900/80 px-2 py-0.5 text-[11px] font-mono font-medium text-slate-200 backdrop-blur-sm transition-colors hover:bg-brand-600 hover:text-white border border-slate-700/60 shadow-xs"
+            >
+              📍 {city.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Imperative footprint layer (renders no DOM); selecting a footprint
@@ -558,6 +579,14 @@ export function StillasCalculatorApp() {
         map={mapInstance}
         overlay={state.drawing.overlayGeoJson}
       />
+
+      {/* Floating Hero Onboarding / Intro Card when no building is active */}
+      {!state.address && !state.perimeter ? (
+        <StudioHeroWelcome
+          onSelectDemo={handleSelectAddress}
+          onOpenGuide={() => setIntroOpen(true)}
+        />
+      ) : null}
     </MapView>
   );
 
@@ -681,14 +710,56 @@ export function StillasCalculatorApp() {
   // quantities are serialized (Req 14.1, 14.2).
   const exportSlot = <ExportButtons getState={getStateSnapshot} />;
 
+  if (viewMode === "landing") {
+    return (
+      <>
+        <LandingPage
+          onLaunchStudio={() => setViewMode("studio")}
+          onLaunchDemo={(city) => {
+            handleSelectAddress(city);
+            setViewMode("studio");
+          }}
+        />
+        <ProductIntroModal
+          isOpen={introOpen}
+          onClose={() => setIntroOpen(false)}
+          onLaunchDemo={() => {
+            handleSelectAddress({
+              label: "Storgata 1, 0155 Oslo, Norway",
+              lat: 59.9139,
+              lon: 10.7522,
+            });
+            setViewMode("studio");
+          }}
+        />
+      </>
+    );
+  }
+
   return (
-    <AppShell
-      map={mapSlot}
-      scaffoldInputs={scaffoldInputsSlot}
-      materialList={materialListSlot}
-      aiAssistant={aiAssistantSlot}
-      exportActions={exportSlot}
-    />
+    <>
+      <AppShell
+        onOpenIntro={() => setIntroOpen(true)}
+        onBackToLanding={() => setViewMode("landing")}
+        map={mapSlot}
+        scaffoldInputs={scaffoldInputsSlot}
+        materialList={materialListSlot}
+        aiAssistant={aiAssistantSlot}
+        exportActions={exportSlot}
+      />
+      <ProductIntroModal
+        isOpen={introOpen}
+        onClose={() => setIntroOpen(false)}
+        onLaunchDemo={() => {
+          handleSelectAddress({
+            label: "Storgata 1, 0155 Oslo, Norway",
+            lat: 59.9139,
+            lon: 10.7522,
+          });
+          setViewMode("studio");
+        }}
+      />
+    </>
   );
 }
 

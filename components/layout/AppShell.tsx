@@ -22,6 +22,10 @@ export type SecondaryPanelId =
 export interface AppShellProps {
   /** Optional brand/title shown in the top bar. Defaults to the app name. */
   title?: ReactNode;
+  /** Callback to trigger the Product Intro modal. */
+  onOpenIntro?: () => void;
+  /** Callback to return to the full landing page overview. */
+  onBackToLanding?: () => void;
   /**
    * Primary content slot: the interactive map. Rendered in the always-visible
    * primary pane on every viewport width (Req 1.5, Req 2).
@@ -59,30 +63,11 @@ const PANEL_TITLES: Record<SecondaryPanelId, string> = {
 
 /**
  * Top-level responsive application shell (Req 1).
- *
- * Layout strategy:
- * - Below 768px the shell is a single-column, mobile-optimized arrangement
- *   (Req 1.2): the map fills the primary area and the secondary panels live in
- *   an openable/dismissable {@link MobileBottomSheet}. A fixed bottom launcher
- *   bar exposes access points to the map, scaffold inputs, material list, AI
- *   assistant, and export (Req 1.5), each with a >=44x44 CSS px touch target
- *   (Req 16.4).
- * - At 768px and above the shell is a multi-pane arrangement (Req 1.3): the map
- *   pane and the side pane (which stacks every secondary panel) are visible
- *   simultaneously, with no navigation required to reach a panel.
- *
- * The same React tree is restyled with Tailwind responsive classes across the
- * breakpoint rather than mounted/unmounted per arrangement. Because none of the
- * slotted content unmounts when the viewport crosses 768px, entered inputs and
- * the selected map location are preserved automatically (Req 1.4).
- *
- * The root container clamps width to the viewport and clips horizontal overflow
- * so the layout renders without horizontal scrolling across 320-1920px
- * (Req 1.1, Req 16.3). Slots are passed in by the caller; wiring of concrete
- * components to `Project_State` happens in a later task.
  */
 export function AppShell({
   title = "StillasCalculator",
+  onOpenIntro,
+  onBackToLanding,
   map,
   scaffoldInputs,
   materialList,
@@ -107,66 +92,141 @@ export function AppShell({
   return (
     <div
       data-testid="app-shell"
-      className="flex h-[100dvh] max-h-[100dvh] w-full max-w-[100vw] flex-col overflow-hidden bg-gray-50 text-gray-900"
+      className="flex h-[100dvh] max-h-[100dvh] w-full max-w-[100vw] flex-col overflow-hidden bg-[#faf8f5] text-[#1a1918] font-sans antialiased"
     >
-      {/* Top bar. Kept compact so the map gets maximum space on small screens. */}
-      <header className="flex h-12 flex-none items-center justify-between border-b border-gray-200 bg-white px-4">
-        <span className="text-base font-semibold">{title}</span>
+      {/* Precision Studio Top Bar */}
+      <header className="flex h-14 flex-none items-center justify-between border-b border-[#e7e3dc] bg-[#faf8f5]/95 px-3 md:px-5 shadow-xs z-30">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#da7756] font-bold text-white shadow-sm">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4.5 w-4.5"
+              aria-hidden="true"
+            >
+              <path d="M4 2v20M20 2v20M4 6h16M4 12h16M4 18h16M4 6l16 12M4 18L20 6" />
+            </svg>
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-sm md:text-base font-serif font-bold tracking-tight text-[#1a1918]">{title}</span>
+            <span className="hidden sm:inline-flex items-center rounded-full bg-[#f4ddd3] px-2 py-0.5 text-[10px] font-mono font-semibold text-[#a3482a]">
+              PRO STUDIO
+            </span>
+          </div>
+        </div>
+
+        {/* Live System Status HUD & Navigation Buttons */}
+        <div className="flex items-center gap-2">
+          {onBackToLanding && (
+            <button
+              type="button"
+              onClick={onBackToLanding}
+              className="flex items-center gap-1.5 rounded-xl bg-white hover:bg-[#f5f2eb] text-[#2d2a26] border border-[#dfdad1] px-3 py-1.5 text-xs font-medium shadow-xs transition-colors"
+            >
+              <span>🌐</span>
+              <span className="hidden sm:inline">Overview & Estimator</span>
+            </button>
+          )}
+
+          {onOpenIntro && (
+            <button
+              type="button"
+              onClick={onOpenIntro}
+              className="flex items-center gap-1.5 rounded-xl bg-[#fdf8f5] hover:bg-[#f9eee8] text-[#a3482a] border border-[#ecc4b4] px-3 py-1.5 text-xs font-medium transition-colors"
+            >
+              <span>ℹ️</span>
+              <span className="hidden sm:inline">Guide</span>
+            </button>
+          )}
+
+          <div className="hidden sm:flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 border border-[#e7e3dc] text-xs text-[#66625d] shadow-2xs">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#da7756] opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#da7756]"></span>
+            </span>
+            <span className="font-mono text-[11px] text-[#66625d]">CAD TAKEOFF</span>
+          </div>
+        </div>
       </header>
 
       {/* Main region: single column on mobile, two panes on desktop. */}
-      <div className="relative flex min-h-0 flex-1 flex-row overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 flex-row overflow-hidden bg-[#faf8f5]">
         {/* Primary pane: the map. Always visible (Req 1.5). */}
         <main
           data-region="map"
           aria-label="Map"
-          className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
+          className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-900"
         >
           {map}
         </main>
 
-        {/* Secondary panels.
-            - Mobile: hosted inside the bottom sheet; only the active panel is
-              shown, and the sheet can be opened/dismissed (Req 1.2).
-            - Desktop: the sheet renders as a static side pane and every panel
-              is shown at once (Req 1.3). */}
+        {/* Secondary panels: mobile bottom sheet / desktop side pane */}
         <MobileBottomSheet
           open={sheetOpen}
           onClose={() => setSheetOpen(false)}
           title={PANEL_TITLES[activePanel]}
         >
+          {/* Desktop Studio Workspace Tab Bar */}
+          <div className="hidden md:flex mb-3 items-center justify-between rounded-xl bg-[#f5f2eb] p-1 border border-[#dfdad1] shadow-2xs">
+            {LAUNCHER_ITEMS.map(({ id, label, icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActivePanel(id)}
+                className={cn(
+                  "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 px-2 text-xs font-medium transition-all",
+                  activePanel === id
+                    ? "bg-white text-[#da7756] font-bold shadow-xs border border-[#e7e3dc]"
+                    : "text-[#66625d] hover:text-[#1a1918] hover:bg-white/50"
+                )}
+              >
+                <span>{icon}</span>
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+
           <div className="flex flex-col gap-4">
             {LAUNCHER_ITEMS.map(({ id, label }) => (
               <section
                 key={id}
                 data-region={id}
                 aria-label={label}
-                // Mobile: only the active panel is visible. Desktop: all panels
-                // are visible simultaneously (multi-pane, Req 1.3).
                 className={cn(
                   activePanel === id ? "block" : "hidden",
-                  "md:block"
+                  "md:block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all"
                 )}
               >
-                {/* Per-panel heading shown only on desktop, where panels stack
-                    and need labels; on mobile the sheet header names it. */}
-                <h2 className="mb-2 hidden text-sm font-semibold text-gray-700 md:block">
-                  {PANEL_TITLES[id]}
-                </h2>
-                {slots[id]}
+                {/* Per-panel heading shown on desktop */}
+                <div className="mb-3 hidden items-center justify-between border-b border-slate-100 pb-2.5 md:flex">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-brand-50 text-brand-700 text-xs font-bold border border-brand-200/50">
+                      {LAUNCHER_ITEMS.find((item) => item.id === id)?.icon}
+                    </span>
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 font-mono">
+                      {PANEL_TITLES[id]}
+                    </h2>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                    SEC-{id.toUpperCase().slice(0, 4)}
+                  </span>
+                </div>
+                <div className="text-slate-900">{slots[id]}</div>
               </section>
             ))}
           </div>
         </MobileBottomSheet>
       </div>
 
-      {/* Mobile launcher bar: access points for every feature (Req 1.5).
-          Hidden on desktop where panels are already visible. Each button is a
-          >=44x44 CSS px touch target (Req 16.4). */}
+      {/* Mobile launcher bar: access points for every feature (Req 1.5). */}
       <nav
         data-testid="mobile-launcher"
         aria-label="Panels"
-        className="z-50 flex h-16 flex-none items-stretch justify-around border-t border-gray-200 bg-white md:hidden"
+        className="z-50 flex h-16 flex-none items-stretch justify-around border-t border-slate-800 bg-slate-900 px-1 md:hidden shadow-lg"
       >
         <button
           type="button"
@@ -175,14 +235,16 @@ export function AppShell({
           data-testid="launcher-map"
           aria-pressed={!sheetOpen}
           className={cn(
-            "flex min-h-11 min-w-11 flex-1 flex-col items-center justify-center gap-0.5 px-1 text-xs",
-            !sheetOpen ? "text-blue-600" : "text-gray-600"
+            "flex min-h-11 min-w-11 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-xs transition-colors",
+            !sheetOpen
+              ? "bg-brand-600/15 text-brand-400 font-semibold"
+              : "text-slate-400 hover:text-slate-200 active:bg-slate-800"
           )}
         >
           <span aria-hidden="true" className="text-lg leading-none">
             🗺️
           </span>
-          Map
+          <span className="text-[11px] tracking-tight">Map</span>
         </button>
         {LAUNCHER_ITEMS.map(({ id, label, icon }) => (
           <button
@@ -193,14 +255,16 @@ export function AppShell({
             data-testid={`launcher-${id}`}
             aria-pressed={sheetOpen && activePanel === id}
             className={cn(
-              "flex min-h-11 min-w-11 flex-1 flex-col items-center justify-center gap-0.5 px-1 text-xs",
-              sheetOpen && activePanel === id ? "text-blue-600" : "text-gray-600"
+              "flex min-h-11 min-w-11 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-xs transition-colors",
+              sheetOpen && activePanel === id
+                ? "bg-brand-600/15 text-brand-400 font-semibold"
+                : "text-slate-400 hover:text-slate-200 active:bg-slate-800"
             )}
           >
             <span aria-hidden="true" className="text-lg leading-none">
               {icon}
             </span>
-            {label}
+            <span className="text-[11px] tracking-tight">{label}</span>
           </button>
         ))}
       </nav>

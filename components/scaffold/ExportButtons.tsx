@@ -156,47 +156,56 @@ export function ExportButtons({
     <section
       data-testid="export-buttons"
       aria-label="Export report"
-      className={cn("flex flex-col gap-3", className)}
+      className={cn("flex flex-col gap-3.5", className)}
     >
-      <div className="flex flex-wrap gap-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 font-mono">
+          Documentation & Takeoff Export
+        </h2>
+        <span className="text-[10px] font-mono text-slate-400">PDF & CSV</span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         <button
           type="button"
           onClick={handleExportPdf}
           disabled={busy}
           data-testid="export-pdf-button"
           className={cn(
-            "inline-flex h-11 items-center justify-center rounded-md px-4 text-sm font-medium",
-            "bg-blue-600 text-white hover:bg-blue-700",
-            "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2",
-            "disabled:cursor-not-allowed disabled:opacity-60",
+            "flex min-h-[48px] items-center justify-center gap-2.5 rounded-xl px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all shadow-sm",
+            "bg-brand-600 text-white hover:bg-brand-700 active:scale-[0.98]",
+            "focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1",
+            "disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none",
           )}
         >
-          {pending === "pdf" ? "Generating PDF…" : "Export PDF"}
+          <span aria-hidden="true" className="text-base">📄</span>
+          <span>{pending === "pdf" ? "Generating PDF…" : "Export PDF"}</span>
         </button>
+
         <button
           type="button"
           onClick={handleExportCsv}
           disabled={busy}
           data-testid="export-csv-button"
           className={cn(
-            "inline-flex h-11 items-center justify-center rounded-md border px-4 text-sm font-medium",
-            "border-gray-300 bg-white text-gray-800 hover:bg-gray-50",
-            "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2",
-            "disabled:cursor-not-allowed disabled:opacity-60",
+            "flex min-h-[48px] items-center justify-center gap-2.5 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-800 transition-all shadow-xs hover:bg-slate-50 active:scale-[0.98]",
+            "focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1",
+            "disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none",
           )}
         >
-          {pending === "csv" ? "Generating CSV…" : "Export CSV"}
+          <span aria-hidden="true" className="text-base">📊</span>
+          <span>{pending === "csv" ? "Generating CSV…" : "Export CSV"}</span>
         </button>
       </div>
 
       {status !== null ? (
-        <p
+        <div
           role="alert"
           data-testid="export-message"
-          className="rounded-md border border-red-300 bg-red-50 p-3 text-xs text-red-700"
+          className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700 shadow-xs"
         >
           {status.text}
-        </p>
+        </div>
       ) : null}
     </section>
   );
