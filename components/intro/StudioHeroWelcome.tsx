@@ -2,20 +2,14 @@
 
 import { useState } from "react";
 
-function cn(...classes: Array<string | false | null | undefined>): string {
-  return classes.filter(Boolean).join(" ");
-}
-
 export interface StudioHeroWelcomeProps {
   onSelectDemo: (city: { label: string; lat: number; lon: number }) => void;
   onOpenGuide: () => void;
-  onStartDrawing?: () => void;
 }
 
 export function StudioHeroWelcome({
   onSelectDemo,
   onOpenGuide,
-  onStartDrawing,
 }: StudioHeroWelcomeProps) {
   const [minimized, setMinimized] = useState(false);
 

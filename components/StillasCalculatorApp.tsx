@@ -581,7 +581,7 @@ export function StillasCalculatorApp() {
       />
 
       {/* Floating Hero Onboarding / Intro Card when no building is active */}
-      {!state.address && !state.perimeter ? (
+      {!state.address && !state.perimeterPolygon ? (
         <StudioHeroWelcome
           onSelectDemo={handleSelectAddress}
           onOpenGuide={() => setIntroOpen(true)}

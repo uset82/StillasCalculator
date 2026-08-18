@@ -322,7 +322,7 @@ export function LandingPage({ onLaunchStudio, onLaunchDemo }: LandingPageProps) 
                     <button
                       key={sys.id}
                       type="button"
-                      onClick={() => setSandboxSystem(sys.id as any)}
+                      onClick={() => setSandboxSystem(sys.id as "frame" | "layher" | "haki" | "tube")}
                       className={cn(
                         "flex flex-col items-start p-2.5 rounded-xl border text-left transition-all",
                         sandboxSystem === sys.id
